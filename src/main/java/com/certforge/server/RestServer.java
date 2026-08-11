@@ -1,8 +1,10 @@
 package com.certforge.server;
 
+import com.certforge.auth.Authenticator;
 import com.certforge.discovery.TokenDiscoverer;
 import com.certforge.discovery.TokenInfo;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
@@ -16,18 +18,41 @@ public class RestServer {
 
     private static final Logger LOG = Logger.getLogger(RestServer.class.getName());
     private final TokenDiscoverer discoverer;
+    private final Authenticator authenticator;
 
-    public RestServer(TokenDiscoverer discoverer) {
+    public RestServer(TokenDiscoverer discoverer, Authenticator authenticator) {
         this.discoverer = discoverer;
+        this.authenticator = authenticator;
     }
 
-    public void start(int port) throws IOException {
+    public int start(int port) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         server.createContext("/health", this::handleHealth);
-        server.createContext("/v1/tokens", this::handleTokens);
+        server.createContext("/v1/tokens", withAuth(this::handleTokens));
         server.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4));
         server.start();
-        LOG.info("Gateway REST API listening on http://127.0.0.1:" + port);
+        int actualPort = server.getAddress().getPort();
+        LOG.info("Gateway REST API listening on http://127.0.0.1:" + actualPort);
+        return actualPort;
+    }
+
+    private HttpHandler withAuth(HttpHandler handler) {
+        return exchange -> {
+            if (!isAuthenticated(exchange)) {
+                sendJson(exchange, 401, "{\"error\":\"unauthorized\",\"message\":\"Invalid or missing API key\"}");
+                return;
+            }
+            handler.handle(exchange);
+        };
+    }
+
+    private boolean isAuthenticated(HttpExchange exchange) {
+        String authHeader = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return false;
+        }
+        String token = authHeader.substring(7).trim();
+        return authenticator.isValid(token);
     }
 
     private void handleHealth(HttpExchange exchange) throws IOException {
@@ -39,7 +64,6 @@ public class RestServer {
             exchange.sendResponseHeaders(405, -1);
             return;
         }
-
         List<TokenInfo> tokens = discoverer.discover();
         StringBuilder json = new StringBuilder("{\"tokens\":[");
         for (int i = 0; i < tokens.size(); i++) {

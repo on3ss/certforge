@@ -1,5 +1,7 @@
 package com.certforge;
 
+import com.certforge.auth.Authenticator;
+import com.certforge.auth.ConfigAuthenticator;
 import com.certforge.config.Config;
 import com.certforge.config.ConfigLoader;
 import com.certforge.discovery.DefaultLibraryPathProvider;
@@ -17,14 +19,8 @@ public class GatewayApp {
     private static final Logger LOG = Logger.getLogger(GatewayApp.class.getName());
 
     private static String defaultConfigPath() {
-        String os = System.getProperty("os.name").toLowerCase();
-        if (os.contains("win")) {
-            return "C:\\ProgramData\\CertForge\\gateway.yml";
-        } else if (os.contains("mac")) {
-            return "/Library/Application Support/CertForge/gateway.yml";
-        } else { // linux and other Unix
-            return "/etc/certforge/gateway.yml";
-        }
+        // Use the user's home directory on every OS
+        return System.getProperty("user.home") + "/.certforge/gateway.yml";
     }
 
     public static void main(String[] args) throws Exception {
@@ -57,7 +53,8 @@ public class GatewayApp {
 
         // 4. Assemble the gateway
         TokenDiscoverer discoverer = new Pkcs11TokenDiscoverer(new DefaultLibraryPathProvider());
-        RestServer server = new RestServer(discoverer);
+        Authenticator authenticator = new ConfigAuthenticator(config.getApiKeys());
+        RestServer server = new RestServer(discoverer, authenticator);
         server.start(port);
 
         LOG.info("Ready. Press Ctrl+C to stop.");
