@@ -34,43 +34,39 @@ class RestServerTest {
     private int port;
     private HttpClient client;
     private AuditLogger auditLogger;
+    private SessionManager sessionManager;
 
     @BeforeEach
     void setUp() throws IOException {
-        // Create audit logger writing to temp directory
         auditLogger = new AuditLogger(tempDir.resolve("audit.log"));
 
-        // Use a static token list: one valid key "good-key"
         Authenticator auth = apiKey -> apiKey.equals("good-key");
 
-        // TokenDiscoverer that returns a fixed list
         TokenDiscoverer discoverer = () -> List.of(
                 new TokenInfo("slot-1", "TestToken", "TestManuf", "1234",
                         "/lib/test.so", 1L)
         );
 
-        // Create SessionManager with audit logger
-        SessionManager sessionManager = new SessionManager(auditLogger);
+        sessionManager = new SessionManager(auditLogger);
 
-        // Create signing service components with audit logger
         SigningKeyProvider signingKeyProvider = new SigningKeyProvider(sessionManager, auditLogger);
         CertificateChainValidator certValidator = new CertificateChainValidator(auditLogger);
         CmsSigningService cmsSigningService = new CmsSigningService(auditLogger);
         PdfSigningService pdfSigningService = new PdfSigningService(
                 signingKeyProvider, certValidator, cmsSigningService, auditLogger
         );
-
         PdfVerificationService pdfVerificationService = new PdfVerificationService(auditLogger);
 
-        server = new RestServer(discoverer, auth, sessionManager, pdfSigningService, auditLogger, pdfVerificationService);
-        port = server.start(0); // 0 = random port
+        server = new RestServer(
+                discoverer, auth, sessionManager, pdfSigningService, auditLogger, pdfVerificationService
+        );
+        port = server.start(0);
         client = HttpClient.newHttpClient();
     }
 
     @AfterEach
     void tearDown() {
-        // HttpServer doesn't have a stop method easily accessible in test.
-        // The JVM will exit after tests; this is fine for now.
+        sessionManager.shutdown();
     }
 
     @Test
@@ -116,13 +112,27 @@ class RestServerTest {
     }
 
     @Test
-    void tokensEndpointReturns401WithWrongAuthScheme() throws Exception {
+    void verifyEndpointReturns400ForMissingDocument() throws Exception {
         var request = HttpRequest.newBuilder()
-                .uri(URI.create("http://127.0.0.1:" + port + "/v1/tokens"))
-                .header("Authorization", "Basic good-key")
-                .GET()
+                .uri(URI.create("http://127.0.0.1:" + port + "/v1/verify"))
+                .header("Authorization", "Bearer good-key")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
                 .build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(401, response.statusCode());
+        assertEquals(400, response.statusCode());
+    }
+
+    @Test
+    void verifyEndpointReturns400ForInvalidBase64() throws Exception {
+        var request = HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/v1/verify"))
+                .header("Authorization", "Bearer good-key")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        "{\"document\":\"!!!not-base64!!!\"}"))
+                .build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, response.statusCode());
     }
 }

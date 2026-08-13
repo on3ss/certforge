@@ -2,9 +2,11 @@ package com.certforge.config;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConfigLoaderTest {
@@ -15,11 +17,11 @@ class ConfigLoaderTest {
     @Test
     void shouldLoadMinimalValidConfig() throws Exception {
         String yaml = """
-            gateway:
-              port: 9443
-              apiKeys:
-                - "abc"
-            """;
+                gateway:
+                  port: 9443
+                  apiKeys:
+                    - "abc"
+                """;
         Path file = tempDir.resolve("gateway.yml");
         Files.writeString(file, yaml);
 
@@ -34,13 +36,27 @@ class ConfigLoaderTest {
     }
 
     @Test
+    void shouldUseDefaultsWhenConfigMissing() throws Exception {
+        String yaml = "{}";
+        Path file = tempDir.resolve("gateway.yml");
+        Files.writeString(file, yaml);
+
+        Config config = ConfigLoader.load(file);
+
+        assertEquals(8443, config.port());
+        assertTrue(config.apiKeys().isEmpty());
+        assertEquals(3600, config.sessionInactivityTimeout());
+        assertEquals(86400, config.sessionMaxLifetime());
+    }
+
+    @Test
     void shouldInterpolateEnvironmentVariables() throws Exception {
         String yaml = """
-        gateway:
-          port: ${PORT}
-          apiKeys:
-            - ${API_KEY}
-        """;
+                gateway:
+                  port: ${PORT}
+                  apiKeys:
+                    - ${API_KEY}
+                """;
         Path file = tempDir.resolve("gateway.yml");
         Files.writeString(file, yaml);
 
@@ -52,5 +68,18 @@ class ConfigLoaderTest {
 
         assertEquals(9999, config.port());
         assertEquals(List.of("secret123"), config.apiKeys());
+    }
+
+    @Test
+    void shouldHandleInvalidPortValue() throws Exception {
+        String yaml = """
+                gateway:
+                  port: not_a_number
+                """;
+        Path file = tempDir.resolve("gateway.yml");
+        Files.writeString(file, yaml);
+
+        Config config = ConfigLoader.load(file);
+        assertEquals(8443, config.port()); // Falls back to default
     }
 }
