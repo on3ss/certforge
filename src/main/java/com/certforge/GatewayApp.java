@@ -9,6 +9,10 @@ import com.certforge.discovery.Pkcs11TokenDiscoverer;
 import com.certforge.discovery.TokenDiscoverer;
 import com.certforge.server.RestServer;
 import com.certforge.session.SessionManager;
+import com.certforge.signing.PdfSigningService;
+import com.certforge.signing.certificate.CertificateChainValidator;
+import com.certforge.signing.cms.CmsSigningService;
+import com.certforge.signing.crypto.SigningKeyProvider;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -65,11 +69,7 @@ public class GatewayApp {
         LOG.info("Authenticator initialized with " + config.getApiKeys().size() + " API key(s)");
 
         // 5. Session management
-        SessionManager sessionManager = new SessionManager();
-
-        // 6. Assemble the gateway
-        TokenDiscoverer discoverer = new Pkcs11TokenDiscoverer(new DefaultLibraryPathProvider());
-        RestServer server = new RestServer(discoverer, authenticator, sessionManager);
+        RestServer server = getRestServer(authenticator);
         server.start(port);
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -78,5 +78,22 @@ public class GatewayApp {
 
         LOG.info("Ready. Press Ctrl+C to stop.");
         Thread.currentThread().join();
+    }
+
+    private static RestServer getRestServer(Authenticator authenticator) {
+        SessionManager sessionManager = new SessionManager();
+
+        // 6. Assemble the gateway
+        TokenDiscoverer discoverer = new Pkcs11TokenDiscoverer(new DefaultLibraryPathProvider());
+
+        // 7. Signing service
+        SigningKeyProvider signingKeyProvider = new SigningKeyProvider(sessionManager);
+        CertificateChainValidator certValidator = new CertificateChainValidator();
+        CmsSigningService cmsSigningService = new CmsSigningService();
+        PdfSigningService pdfSigningService = new PdfSigningService(
+                signingKeyProvider, certValidator, cmsSigningService
+        );
+
+        return new RestServer(discoverer, authenticator, sessionManager, pdfSigningService);
     }
 }

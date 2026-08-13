@@ -5,6 +5,7 @@ import com.certforge.discovery.TokenDiscoverer;
 import com.certforge.discovery.TokenInfo;
 import com.certforge.session.CertificateInfo;
 import com.certforge.session.SessionManager;
+import com.certforge.signing.PdfSigningService;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -13,7 +14,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -23,12 +26,14 @@ public class RestServer {
     private final TokenDiscoverer discoverer;
     private final Authenticator authenticator;
     private final SessionManager sessionManager;
+    private final PdfSigningService pdfSigningService;
 
     public RestServer(TokenDiscoverer discoverer, Authenticator authenticator,
-                      SessionManager sessionManager) {
+                      SessionManager sessionManager, PdfSigningService pdfSigningService) {
         this.discoverer = discoverer;
         this.authenticator = authenticator;
         this.sessionManager = sessionManager;
+        this.pdfSigningService = pdfSigningService;
     }
 
     public int start(int port) throws IOException {
@@ -130,8 +135,10 @@ public class RestServer {
         String path = exchange.getRequestURI().getPath();
         String[] parts = path.split("/");
 
-        // Path format: /v1/sessions/{sessionId} or /v1/sessions/{sessionId}/certificates
-        // parts = ["", "v1", "sessions", "{sessionId}"] or ["", "v1", "sessions", "{sessionId}", "certificates"]
+        // Path formats:
+        // /v1/sessions/{sessionId}
+        // /v1/sessions/{sessionId}/certificates
+        // /v1/sessions/{sessionId}/jobs
 
         if (parts.length < 4) {
             LOG.warning("Invalid session path format: " + path);
@@ -141,38 +148,88 @@ public class RestServer {
 
         String sessionId = parts[3];
         boolean listCerts = parts.length >= 5 && "certificates".equals(parts[4]);
+        boolean signJob = parts.length >= 5 && "jobs".equals(parts[4]);
 
         if ("GET".equals(exchange.getRequestMethod()) && listCerts) {
-            LOG.fine(() -> "Listing certificates for session ID " + sessionId);
-            try {
-                List<CertificateInfo> certs = sessionManager.listCertificates(sessionId);
-                StringBuilder json = new StringBuilder("{\"certificates\":[");
-                for (int i = 0; i < certs.size(); i++) {
-                    CertificateInfo c = certs.get(i);
-                    if (i > 0) json.append(",");
-                    json.append("{")
-                            .append("\"alias\":\"").append(escape(c.getAlias())).append("\",")
-                            .append("\"subject\":\"").append(escape(c.getSubject())).append("\",")
-                            .append("\"issuer\":\"").append(escape(c.getIssuer())).append("\",")
-                            .append("\"serialNumber\":\"").append(escape(c.getSerialNumber())).append("\",")
-                            .append("\"notBefore\":\"").append(escape(c.getNotBefore())).append("\",")
-                            .append("\"notAfter\":\"").append(escape(c.getNotAfter())).append("\",")
-                            .append("\"keyType\":\"").append(escape(c.getKeyType())).append("\",")
-                            .append("\"keySize\":").append(c.getKeySize())
-                            .append("}");
-                }
-                json.append("]}");
-                sendJson(exchange, 200, json.toString());
-            } catch (Exception e) {
-                LOG.warning("Session not found or failed to list certificates for session ID " + sessionId + ": " + e.getMessage());
-                sendJson(exchange, 404, "{\"error\":\"session_not_found\",\"message\":\"" + escape(e.getMessage()) + "\"}");
-            }
+            handleListCertificates(exchange, sessionId);
+        } else if ("POST".equals(exchange.getRequestMethod()) && signJob) {
+            handleSignJob(exchange, sessionId);
         } else if ("DELETE".equals(exchange.getRequestMethod())) {
             LOG.fine(() -> "Closing session ID " + sessionId);
             sessionManager.closeSession(sessionId);
             sendJson(exchange, 200, "{\"status\":\"closed\"}");
         } else {
             exchange.sendResponseHeaders(405, -1);
+        }
+    }
+
+    private void handleListCertificates(HttpExchange exchange, String sessionId) throws IOException {
+        LOG.fine(() -> "Listing certificates for session ID " + sessionId);
+        try {
+            List<CertificateInfo> certs = sessionManager.listCertificates(sessionId);
+            StringBuilder json = new StringBuilder("{\"certificates\":[");
+            for (int i = 0; i < certs.size(); i++) {
+                CertificateInfo c = certs.get(i);
+                if (i > 0) json.append(",");
+                json.append("{")
+                        .append("\"alias\":\"").append(escape(c.getAlias())).append("\",")
+                        .append("\"subject\":\"").append(escape(c.getSubject())).append("\",")
+                        .append("\"issuer\":\"").append(escape(c.getIssuer())).append("\",")
+                        .append("\"serialNumber\":\"").append(escape(c.getSerialNumber())).append("\",")
+                        .append("\"notBefore\":\"").append(escape(c.getNotBefore())).append("\",")
+                        .append("\"notAfter\":\"").append(escape(c.getNotAfter())).append("\",")
+                        .append("\"keyType\":\"").append(escape(c.getKeyType())).append("\",")
+                        .append("\"keySize\":").append(c.getKeySize())
+                        .append("}");
+            }
+            json.append("]}");
+            sendJson(exchange, 200, json.toString());
+        } catch (Exception e) {
+            LOG.warning("Failed to list certificates for session " + sessionId + ": " + e.getMessage());
+            sendJson(exchange, 404, "{\"error\":\"session_not_found\",\"message\":\"" + escape(e.getMessage()) + "\"}");
+        }
+    }
+
+    private void handleSignJob(HttpExchange exchange, String sessionId) throws IOException {
+        LOG.fine(() -> "Processing sign job for session ID " + sessionId);
+        try {
+            // Read JSON body
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String documentBase64 = extractJsonValue(body, "document");
+            String alias = extractJsonValue(body, "alias");
+
+            if (documentBase64 == null || alias == null) {
+                sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"document (base64) and alias are required\"}");
+                return;
+            }
+
+            // Decode base64 PDF
+            byte[] pdfBytes = Base64.getDecoder().decode(documentBase64);
+            LOG.info("Signing PDF (" + pdfBytes.length + " bytes) with alias '" + alias + "'");
+
+            // Sign PDF
+            byte[] signedPdf = pdfSigningService.signPdf(sessionId, alias, pdfBytes);
+
+            // Encode signed PDF as base64
+            String signedBase64 = Base64.getEncoder().encodeToString(signedPdf);
+            String jobId = "job_" + UUID.randomUUID().toString().replace("-", "");
+
+            String response = "{"
+                    + "\"jobId\":\"" + jobId + "\","
+                    + "\"status\":\"completed\","
+                    + "\"document\":{"
+                    + "\"data\":\"" + signedBase64 + "\","
+                    + "\"filename\":\"signed-document.pdf\""
+                    + "}"
+                    + "}";
+            sendJson(exchange, 200, response);
+
+        } catch (IllegalArgumentException e) {
+            LOG.warning("Invalid base64 document: " + e.getMessage());
+            sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"Invalid base64 document data\"}");
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "PDF signing failed: " + e.getMessage(), e);
+            sendJson(exchange, 500, "{\"error\":\"signing_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
         }
     }
 

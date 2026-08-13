@@ -1,0 +1,140 @@
+package com.certforge.signing;
+
+import com.certforge.signing.certificate.CertificateChainValidator;
+import com.certforge.signing.cms.CmsSigningService;
+import com.certforge.signing.crypto.CryptoSigner;
+import com.certforge.signing.crypto.Pkcs11CryptoSigner;
+import com.certforge.signing.crypto.SigningKey;
+import com.certforge.signing.crypto.SigningKeyProvider;
+import com.certforge.signing.exception.InvalidCertificateException;
+import com.certforge.signing.exception.PdfSigningException;
+import com.certforge.signing.exception.SigningKeyNotFoundException;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.interactive.digitalsignature.ExternalSigningSupport;
+import org.apache.pdfbox.pdmodel.interactive.digitalsignature.PDSignature;
+import org.apache.pdfbox.pdmodel.interactive.digitalsignature.SignatureOptions;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.security.cert.X509Certificate;
+import java.util.Calendar;
+import java.util.List;
+import java.util.logging.Logger;
+
+public class PdfSigningService {
+
+    private static final Logger LOG = Logger.getLogger(PdfSigningService.class.getName());
+
+    private final SigningKeyProvider signingKeyProvider;
+    private final CertificateChainValidator certificateValidator;
+    private final CmsSigningService cmsSigningService;
+
+    public PdfSigningService(SigningKeyProvider signingKeyProvider,
+                             CertificateChainValidator certificateValidator,
+                             CmsSigningService cmsSigningService) {
+        this.signingKeyProvider = signingKeyProvider;
+        this.certificateValidator = certificateValidator;
+        this.cmsSigningService = cmsSigningService;
+    }
+
+    public byte[] signPdf(String sessionId, String alias, byte[] pdfBytes)
+            throws PdfSigningException, SigningKeyNotFoundException, InvalidCertificateException {
+        LOG.info("Starting PDF signing with alias: " + alias);
+        LOG.info("PDF input size: " + pdfBytes.length + " bytes");
+
+        // 1. Get signing key
+        SigningKey signingKey = signingKeyProvider.getSigningKey(sessionId, alias);
+        X509Certificate[] chain = signingKey.getCertificateChain();
+
+        // 2. Validate certificate chain
+        certificateValidator.validate(chain);
+
+        // 3. Create crypto signer
+        CryptoSigner cryptoSigner = new Pkcs11CryptoSigner(
+                signingKey.getPrivateKey(),
+                chain,
+                signingKeyProvider.getProvider(sessionId),
+                determineSignatureAlgorithm(chain[0])
+        );
+
+        // 4. Sign PDF using external signing flow
+        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
+            // Create signature dictionary
+            PDSignature signature = new PDSignature();
+            signature.setFilter(PDSignature.FILTER_ADOBE_PPKLITE);
+            signature.setSubFilter(PDSignature.SUBFILTER_ADBE_PKCS7_DETACHED);
+            signature.setName(alias);
+            signature.setSignDate(Calendar.getInstance());
+            signature.setReason("CertForge Digital Signature");
+            signature.setLocation("Local Gateway");
+
+            // Signature options
+            SignatureOptions options = new SignatureOptions();
+            options.setPreferredSignatureSize(32768);
+
+            // Add signature to document
+            document.addSignature(signature, options);
+
+            // Prepare for external signing
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            ExternalSigningSupport externalSigning =
+                    document.saveIncrementalForExternalSigning(output);
+
+            // Get the exact byte range to sign
+            byte[] cmsSignature;
+            try (InputStream content = externalSigning.getContent()) {
+                byte[] contentBytes = content.readAllBytes();
+                LOG.info("PDF content to sign: " + contentBytes.length + " bytes");
+
+                // Create CMS signature
+                cmsSignature = cmsSigningService.createDetachedSignature(
+                        contentBytes, cryptoSigner);
+                LOG.info("CMS signature size: " + cmsSignature.length + " bytes");
+            }
+
+            // Set the CMS signature
+            externalSigning.setSignature(cmsSignature);
+
+            byte[] signedPdf = output.toByteArray();
+            LOG.info("Signed PDF size: " + signedPdf.length + " bytes");
+
+            // Verify signature was embedded
+            verifySignedPdf(signedPdf);
+
+            return signedPdf;
+
+        } catch (Exception e) {
+            LOG.severe("PDF signing failed: " + e.getMessage());
+            e.printStackTrace();
+            throw new PdfSigningException("Failed to sign PDF", e);
+        }
+    }
+
+    /**
+     * Diagnostic method to verify the signed PDF contains a valid signature.
+     */
+    private void verifySignedPdf(byte[] signedPdf) {
+        try (PDDocument signedDocument = Loader.loadPDF(signedPdf)) {
+            List<PDSignature> signatures = signedDocument.getSignatureDictionaries();
+            LOG.info("Signatures found in signed PDF: " + signatures.size());
+
+            for (PDSignature sig : signatures) {
+                LOG.info("  Signature name: " + sig.getName());
+                LOG.info("  SubFilter: " + sig.getSubFilter());
+                LOG.info("  Contents length: " + (sig.getContents() != null ? sig.getContents().length : "null"));
+                LOG.info("  ByteRange: " + java.util.Arrays.toString(sig.getByteRange()));
+            }
+        } catch (Exception e) {
+            LOG.warning("Failed to verify signed PDF: " + e.getMessage());
+        }
+    }
+
+    private String determineSignatureAlgorithm(X509Certificate leaf) {
+        String algorithm = leaf.getPublicKey().getAlgorithm();
+        if ("EC".equals(algorithm)) {
+            return "SHA256withECDSA";
+        }
+        return "SHA256withRSA";
+    }
+}
