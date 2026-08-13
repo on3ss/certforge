@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -65,17 +66,12 @@ public class RestServer {
 
             if (!isAuthenticated(exchange)) {
                 LOG.warning("Unauthorized access attempt to " + path);
-
-                // Audit: auth failed
                 auditLogger.logAuthFailed(path, remoteAddress);
-
-                sendJson(exchange, 401, "{\"error\":\"unauthorized\",\"message\":\"Invalid or missing API key\"}");
+                sendError(exchange, 401, "unauthorized", "Invalid or missing API key");
                 return;
             }
 
-            // Audit: auth success (at FINE level - avoid log flooding)
             auditLogger.logAuthSuccess(path, remoteAddress);
-
             handler.handle(exchange);
         };
     }
@@ -95,7 +91,7 @@ public class RestServer {
 
     private void handleTokens(HttpExchange exchange) throws IOException {
         if (!"GET".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
+            sendError(exchange, 405, "method_not_allowed", "Method " + exchange.getRequestMethod() + " not allowed for /v1/tokens");
             return;
         }
         LOG.fine("Processing GET /v1/tokens request");
@@ -128,7 +124,7 @@ public class RestServer {
             if (tokenId == null || pin == null) {
                 LOG.warning("Invalid session creation payload: missing tokenId or pin");
                 auditLogger.logError("session_create", "Missing tokenId or pin");
-                sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"tokenId and pin are required\"}");
+                sendError(exchange, 400, "bad_request", "tokenId and pin are required");
                 return;
             }
 
@@ -136,7 +132,7 @@ public class RestServer {
             if (token == null) {
                 LOG.warning("Token not found during session creation: " + tokenId);
                 auditLogger.logError("session_create", "Token not found: " + tokenId);
-                sendJson(exchange, 404, "{\"error\":\"token_not_found\",\"message\":\"Token not found: " + escape(tokenId) + "\"}");
+                sendError(exchange, 404, "token_not_found", "Token not found: " + tokenId);
                 return;
             }
 
@@ -147,10 +143,10 @@ public class RestServer {
             } catch (Exception e) {
                 LOG.log(Level.WARNING, "Failed to open session for token " + tokenId + ": " + e.getMessage(), e);
                 auditLogger.logError("session_create", "Failed to open session: " + e.getMessage());
-                sendJson(exchange, 401, "{\"error\":\"session_open_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
+                sendError(exchange, 401, "session_open_failed", e.getMessage());
             }
         } else {
-            exchange.sendResponseHeaders(405, -1);
+            sendError(exchange, 405, "method_not_allowed", "Method " + exchange.getRequestMethod() + " not allowed for /v1/sessions");
         }
     }
 
@@ -166,7 +162,7 @@ public class RestServer {
         if (parts.length < 4) {
             LOG.warning("Invalid session path format: " + path);
             auditLogger.logError("session_operation", "Invalid path: " + path);
-            sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"Invalid session path\"}");
+            sendError(exchange, 400, "bad_request", "Invalid session path");
             return;
         }
 
@@ -183,7 +179,7 @@ public class RestServer {
             sessionManager.closeSession(sessionId);
             sendJson(exchange, 200, "{\"status\":\"closed\"}");
         } else {
-            exchange.sendResponseHeaders(405, -1);
+            sendError(exchange, 405, "method_not_allowed", "Method " + exchange.getRequestMethod() + " not allowed for " + path);
         }
     }
 
@@ -210,32 +206,27 @@ public class RestServer {
             sendJson(exchange, 200, json.toString());
         } catch (Exception e) {
             LOG.warning("Failed to list certificates for session " + sessionId + ": " + e.getMessage());
-            sendJson(exchange, 404, "{\"error\":\"session_not_found\",\"message\":\"" + escape(e.getMessage()) + "\"}");
+            sendError(exchange, 404, "session_not_found", e.getMessage());
         }
     }
 
     private void handleSignJob(HttpExchange exchange, String sessionId) throws IOException {
         LOG.fine(() -> "Processing sign job for session ID " + sessionId);
         try {
-            // Read JSON body
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             String documentBase64 = extractJsonValue(body, "document");
             String alias = extractJsonValue(body, "alias");
 
             if (documentBase64 == null || alias == null) {
                 auditLogger.logError("sign_job", "Missing document or alias");
-                sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"document (base64) and alias are required\"}");
+                sendError(exchange, 400, "bad_request", "document (base64) and alias are required");
                 return;
             }
 
-            // Decode base64 PDF
             byte[] pdfBytes = Base64.getDecoder().decode(documentBase64);
             LOG.info("Signing PDF (" + pdfBytes.length + " bytes) with alias '" + alias + "'");
 
-            // Sign PDF
             byte[] signedPdf = pdfSigningService.signPdf(sessionId, alias, pdfBytes);
-
-            // Encode signed PDF as base64
             String signedBase64 = Base64.getEncoder().encodeToString(signedPdf);
             String jobId = "job_" + UUID.randomUUID().toString().replace("-", "");
 
@@ -252,17 +243,17 @@ public class RestServer {
         } catch (IllegalArgumentException e) {
             LOG.warning("Invalid base64 document: " + e.getMessage());
             auditLogger.logError("sign_job", "Invalid base64 document");
-            sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"Invalid base64 document data\"}");
+            sendError(exchange, 400, "bad_request", "Invalid base64 document data");
         } catch (Exception e) {
             LOG.log(Level.WARNING, "PDF signing failed: " + e.getMessage(), e);
             auditLogger.logError("sign_job", "Signing failed: " + e.getMessage());
-            sendJson(exchange, 500, "{\"error\":\"signing_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
+            sendError(exchange, 500, "signing_failed", e.getMessage());
         }
     }
 
     private void handleVerify(HttpExchange exchange) throws IOException {
         if (!"POST".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
+            sendError(exchange, 405, "method_not_allowed", "Method " + exchange.getRequestMethod() + " not allowed for /v1/verify");
             return;
         }
 
@@ -271,7 +262,7 @@ public class RestServer {
             String documentBase64 = extractJsonValue(body, "document");
 
             if (documentBase64 == null) {
-                sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"document (base64) is required\"}");
+                sendError(exchange, 400, "bad_request", "document (base64) is required");
                 return;
             }
 
@@ -282,10 +273,10 @@ public class RestServer {
             sendJson(exchange, 200, result.toJson());
 
         } catch (IllegalArgumentException e) {
-            sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"Invalid base64 document data\"}");
+            sendError(exchange, 400, "bad_request", "Invalid base64 document data");
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Verification failed: " + e.getMessage(), e);
-            sendJson(exchange, 500, "{\"error\":\"verification_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
+            sendError(exchange, 500, "verification_failed", e.getMessage());
         }
     }
 
@@ -350,6 +341,17 @@ public class RestServer {
             }
         }
         return sb.toString();
+    }
+
+    private void sendError(HttpExchange exchange, int statusCode, String errorCode, String message) throws IOException {
+        String timestamp = Instant.now().toString();
+        String json = "{"
+                + "\"error\":\"" + escape(errorCode) + "\","
+                + "\"message\":\"" + escape(message) + "\","
+                + "\"status\":" + statusCode + ","
+                + "\"timestamp\":\"" + timestamp + "\""
+                + "}";
+        sendJson(exchange, statusCode, json);
     }
 
     private void sendJson(HttpExchange exchange, int code, String body) throws IOException {

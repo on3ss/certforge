@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RestServerTest {
 
@@ -87,6 +88,9 @@ class RestServerTest {
                 .build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(401, response.statusCode());
+        assertTrue(response.body().contains("\"error\":\"unauthorized\""));
+        assertTrue(response.body().contains("\"status\":401"));
+        assertTrue(response.body().contains("\"timestamp\""));
     }
 
     @Test
@@ -109,6 +113,22 @@ class RestServerTest {
                 .build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(401, response.statusCode());
+        assertTrue(response.body().contains("\"error\":\"unauthorized\""));
+        assertTrue(response.body().contains("\"status\":401"));
+    }
+
+    @Test
+    void tokensEndpointReturns405ForMethodNotAllowed() throws Exception {
+        var request = HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/v1/tokens"))
+                .header("Authorization", "Bearer good-key")
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(405, response.statusCode());
+        assertTrue(response.body().contains("\"error\":\"method_not_allowed\""));
+        assertTrue(response.body().contains("\"status\":405"));
+        assertTrue(response.body().contains("\"timestamp\""));
     }
 
     @Test
@@ -121,6 +141,9 @@ class RestServerTest {
                 .build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("\"error\":\"bad_request\""));
+        assertTrue(response.body().contains("\"status\":400"));
+        assertTrue(response.body().contains("\"timestamp\""));
     }
 
     @Test
@@ -134,5 +157,7 @@ class RestServerTest {
                 .build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("\"error\":\"bad_request\""));
+        assertTrue(response.body().contains("\"status\":400"));
     }
 }
