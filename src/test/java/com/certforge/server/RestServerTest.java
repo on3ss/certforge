@@ -9,6 +9,7 @@ import com.certforge.signing.PdfSigningService;
 import com.certforge.signing.certificate.CertificateChainValidator;
 import com.certforge.signing.cms.CmsSigningService;
 import com.certforge.signing.crypto.SigningKeyProvider;
+import com.certforge.verify.PdfVerificationService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -59,7 +60,9 @@ class RestServerTest {
                 signingKeyProvider, certValidator, cmsSigningService, auditLogger
         );
 
-        server = new RestServer(discoverer, auth, sessionManager, pdfSigningService, auditLogger);
+        PdfVerificationService pdfVerificationService = new PdfVerificationService(auditLogger);
+
+        server = new RestServer(discoverer, auth, sessionManager, pdfSigningService, auditLogger, pdfVerificationService);
         port = server.start(0); // 0 = random port
         client = HttpClient.newHttpClient();
     }

@@ -14,6 +14,7 @@ import com.certforge.signing.PdfSigningService;
 import com.certforge.signing.certificate.CertificateChainValidator;
 import com.certforge.signing.cms.CmsSigningService;
 import com.certforge.signing.crypto.SigningKeyProvider;
+import com.certforge.verify.PdfVerificationService;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,6 +26,8 @@ public class GatewayApp {
 
     private static final Logger LOG = Logger.getLogger(GatewayApp.class.getName());
     private static final String VERSION = "0.1.0";
+
+    private static SessionManager sessionManager;
 
     private static String defaultConfigPath() {
         return System.getProperty("user.home") + "/.certforge/gateway.yml";
@@ -38,21 +41,31 @@ public class GatewayApp {
         AuditLogger auditLogger = new AuditLogger(config.auditPath());
         auditLogger.logStarted(VERSION);
 
-        // 3. Add shutdown hook (also audits shutdown)
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            auditLogger.logStopped();
-            LOG.info("Shutdown signal received. Stopping CertForge Gateway Application.");
-        }));
-
-        // 4. Authentication
+        // 3. Authentication
         Authenticator authenticator = new ConfigAuthenticator(config.apiKeys());
         LOG.info("Authenticator initialized with " + config.apiKeys().size() + " API key(s)");
 
-        // 5. Port override via environment variable
+        // 4. Port override via environment variable
         int port = resolvePort(config);
+
+        // 5. Session management
+        sessionManager = new SessionManager(
+                auditLogger,
+                config.sessionInactivityTimeout(),
+                config.sessionMaxLifetime()
+        );
 
         // 6. Assemble gateway
         RestServer server = getRestServer(authenticator, auditLogger);
+
+        // 7. Add shutdown hook (also audits shutdown and closes sessions)
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            LOG.info("Shutdown signal received. Stopping CertForge Gateway Application.");
+            sessionManager.shutdown();
+            auditLogger.logStopped();
+        }));
+
+        // 8. Start server
         server.start(port);
 
         LOG.info("Ready. Press Ctrl+C to stop.");
@@ -101,9 +114,6 @@ public class GatewayApp {
     }
 
     private static RestServer getRestServer(Authenticator authenticator, AuditLogger auditLogger) {
-        // Session management
-        SessionManager sessionManager = new SessionManager(auditLogger);
-
         // Token discovery
         TokenDiscoverer discoverer = new Pkcs11TokenDiscoverer(
                 new DefaultLibraryPathProvider(), auditLogger
@@ -117,8 +127,10 @@ public class GatewayApp {
                 signingKeyProvider, certValidator, cmsSigningService, auditLogger
         );
 
+        PdfVerificationService pdfVerificationService = new PdfVerificationService(auditLogger);
+
         return new RestServer(
-                discoverer, authenticator, sessionManager, pdfSigningService, auditLogger
+                discoverer, authenticator, sessionManager, pdfSigningService, auditLogger, pdfVerificationService
         );
     }
 }

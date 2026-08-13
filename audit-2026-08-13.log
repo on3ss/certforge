@@ -14,3 +14,28 @@
 {"timestamp":"2026-08-13T11:53:52.900162500Z","type":"AUTH_SUCCESS","path":"/v1/sessions/c2a3e307fd7e46c28132c9f5297b73d8/certificates","remoteAddress":"127.0.0.1"}
 {"timestamp":"2026-08-13T11:54:01.925841400Z","type":"AUTH_SUCCESS","path":"/v1/sessions/c2a3e307fd7e46c28132c9f5297b73d8/jobs","remoteAddress":"127.0.0.1"}
 {"timestamp":"2026-08-13T11:54:02.091010400Z","type":"DOCUMENT_SIGNED","alias":"rsaKey","result":"success","sessionId":"c2a3e307fd7e46c28132c9f5297b73d8","signatureSize":"1383","pdfSize":"25819"}
+{"timestamp":"2026-08-13T11:58:59.125485Z","type":"GATEWAY_STOPPED"}
+{"timestamp":"2026-08-13T11:59:08.040600600Z","type":"GATEWAY_STARTED","version":"0.1.0"}
+{"timestamp":"2026-08-13T11:59:11.254284100Z","type":"AUTH_SUCCESS","path":"/v1/sessions","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T11:59:11.256285200Z","type":"TOKEN_DISCOVERY_STARTED","libraries":"6"}
+{"timestamp":"2026-08-13T11:59:11.292901600Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\SoftHSM2\\lib\\softhsm2-x64.dll"}
+{"timestamp":"2026-08-13T11:59:11.295901600Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\SoftHSM2\\lib\\softhsm2.dll"}
+{"timestamp":"2026-08-13T11:59:11.297902Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\Windows\\System32\\eTPKCS11.dll"}
+{"timestamp":"2026-08-13T11:59:11.299901200Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\Windows\\System32\\ykcs11.dll"}
+{"timestamp":"2026-08-13T11:59:11.341256900Z","type":"LIBRARY_PROBED","result":"no_tokens","library":"C:\\Windows\\System32\\opensc-pkcs11.dll"}
+{"timestamp":"2026-08-13T11:59:11.372109900Z","type":"LIBRARY_PROBED","result":"success","library":"E:\\SoftHSM2\\lib\\softhsm2-x64.dll"}
+{"timestamp":"2026-08-13T11:59:11.373110200Z","type":"TOKEN_FOUND","label":"SoftHSMToken1","tokenId":"slot-249215396","serial":"09af31a70edab9a4"}
+{"timestamp":"2026-08-13T11:59:11.374111100Z","type":"TOKEN_FOUND","label":"","tokenId":"slot-1","serial":""}
+{"timestamp":"2026-08-13T11:59:11.375111500Z","type":"TOKEN_DISCOVERY_COMPLETED","tokensFound":"2"}
+{"timestamp":"2026-08-13T11:59:11.449273800Z","type":"SESSION_OPENED","sessionId":"2813b8dd890c43d9aefce6476cccadba","tokenId":"slot-249215396"}
+{"timestamp":"2026-08-13T11:59:15.634637800Z","type":"AUTH_SUCCESS","path":"/v1/sessions/2813b8dd890c43d9aefce6476cccadba/certificates","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T11:59:24.229127800Z","type":"AUTH_SUCCESS","path":"/v1/sessions/2813b8dd890c43d9aefce6476cccadba/jobs","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T11:59:24.384371700Z","type":"DOCUMENT_SIGNED","result":"success","sessionId":"2813b8dd890c43d9aefce6476cccadba","signatureSize":"1383","pdfSize":"25819","alias":"rsaKey"}
+{"timestamp":"2026-08-13T12:05:13.823178Z","type":"GATEWAY_STOPPED"}
+{"timestamp":"2026-08-13T12:05:23.365951400Z","type":"GATEWAY_STARTED","version":"0.1.0"}
+{"timestamp":"2026-08-13T12:06:52.503328700Z","type":"AUTH_SUCCESS","remoteAddress":"127.0.0.1","path":"/v1/verify"}
+{"timestamp":"2026-08-13T12:06:52.647841100Z","type":"DOCUMENT_VERIFIED","result":"invalid","signatureCount":"1"}
+{"timestamp":"2026-08-13T12:07:44.986538700Z","type":"GATEWAY_STOPPED"}
+{"timestamp":"2026-08-13T12:07:53.684235400Z","type":"GATEWAY_STARTED","version":"0.1.0"}
+{"timestamp":"2026-08-13T12:07:56.879602Z","type":"AUTH_SUCCESS","path":"/v1/verify","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T12:07:57.026832100Z","type":"DOCUMENT_VERIFIED","result":"valid","signatureCount":"1"}

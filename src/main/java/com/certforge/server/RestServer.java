@@ -7,6 +7,8 @@ import com.certforge.discovery.TokenInfo;
 import com.certforge.session.CertificateInfo;
 import com.certforge.session.SessionManager;
 import com.certforge.signing.PdfSigningService;
+import com.certforge.verify.PdfVerificationService;
+import com.certforge.verify.VerificationResult;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -29,15 +31,17 @@ public class RestServer {
     private final SessionManager sessionManager;
     private final PdfSigningService pdfSigningService;
     private final AuditLogger auditLogger;
+    private final PdfVerificationService pdfVerificationService;
 
     public RestServer(TokenDiscoverer discoverer, Authenticator authenticator,
                       SessionManager sessionManager, PdfSigningService pdfSigningService,
-                      AuditLogger auditLogger) {
+                      AuditLogger auditLogger, PdfVerificationService pdfVerificationService) {
         this.discoverer = discoverer;
         this.authenticator = authenticator;
         this.sessionManager = sessionManager;
         this.pdfSigningService = pdfSigningService;
         this.auditLogger = auditLogger;
+        this.pdfVerificationService = pdfVerificationService;
     }
 
     public int start(int port) throws IOException {
@@ -46,6 +50,7 @@ public class RestServer {
         server.createContext("/v1/tokens", withAuth(this::handleTokens));
         server.createContext("/v1/sessions", withAuth(this::handleSessions));
         server.createContext("/v1/sessions/", withAuth(this::handleSessionById));
+        server.createContext("/v1/verify", withAuth(this::handleVerify));
         server.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4));
         server.start();
         int actualPort = server.getAddress().getPort();
@@ -252,6 +257,35 @@ public class RestServer {
             LOG.log(Level.WARNING, "PDF signing failed: " + e.getMessage(), e);
             auditLogger.logError("sign_job", "Signing failed: " + e.getMessage());
             sendJson(exchange, 500, "{\"error\":\"signing_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
+        }
+    }
+
+    private void handleVerify(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String documentBase64 = extractJsonValue(body, "document");
+
+            if (documentBase64 == null) {
+                sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"document (base64) is required\"}");
+                return;
+            }
+
+            byte[] pdfBytes = Base64.getDecoder().decode(documentBase64);
+            LOG.info("Verifying PDF (" + pdfBytes.length + " bytes)");
+
+            VerificationResult result = pdfVerificationService.verify(pdfBytes);
+            sendJson(exchange, 200, result.toJson());
+
+        } catch (IllegalArgumentException e) {
+            sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"Invalid base64 document data\"}");
+        } catch (Exception e) {
+            LOG.log(Level.WARNING, "Verification failed: " + e.getMessage(), e);
+            sendJson(exchange, 500, "{\"error\":\"verification_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
         }
     }
 

@@ -173,10 +173,6 @@ public class AuditLogger {
         ));
     }
 
-    public void logVerificationFailed(String error) {
-        logEvent(AuditEventType.VERIFICATION_FAILED, Map.of("error", error));
-    }
-
     // Errors
     public void logError(String operation, String message) {
         logEvent(AuditEventType.ERROR, Map.of(
@@ -199,6 +195,25 @@ public class AuditLogger {
                 "path", path,
                 "statusCode", String.valueOf(statusCode),
                 "durationMs", String.valueOf(durationMs)
+        ));
+    }
+
+    /**
+     * Convenience method for logging verification events.
+     */
+    public void logVerifyEvent(String result, int signatureCount) {
+        logEvent(AuditEventType.DOCUMENT_VERIFIED, Map.of(
+                "result", result,
+                "signatureCount", String.valueOf(signatureCount)
+        ));
+    }
+
+    /**
+     * Convenience method for logging verification failures.
+     */
+    public void logVerificationFailed(String error) {
+        logEvent(AuditEventType.VERIFICATION_FAILED, Map.of(
+                "error", error
         ));
     }
 

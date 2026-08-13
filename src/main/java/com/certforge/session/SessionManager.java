@@ -1,5 +1,6 @@
 package com.certforge.session;
 
+import com.certforge.audit.AuditEventType;
 import com.certforge.audit.AuditLogger;
 import com.certforge.discovery.TokenInfo;
 
@@ -7,8 +8,12 @@ import java.security.KeyStore;
 import java.security.Provider;
 import java.security.Security;
 import java.security.cert.X509Certificate;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 public class SessionManager {
@@ -17,9 +22,32 @@ public class SessionManager {
 
     private final Map<String, SessionData> sessions = new ConcurrentHashMap<>();
     private final AuditLogger auditLogger;
+    private final int inactivityTimeoutSeconds;
+    private final int maxLifetimeSeconds;
+    private final ScheduledExecutorService cleanupExecutor;
 
     public SessionManager(AuditLogger auditLogger) {
+        this(auditLogger, 3600, 86400); // Defaults: 1h inactivity, 24h max
+    }
+
+    public SessionManager(AuditLogger auditLogger, int inactivityTimeoutSeconds, int maxLifetimeSeconds) {
         this.auditLogger = auditLogger;
+        this.inactivityTimeoutSeconds = inactivityTimeoutSeconds;
+        this.maxLifetimeSeconds = maxLifetimeSeconds;
+        this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "session-cleanup");
+            t.setDaemon(true);
+            return t;
+        });
+
+        // Schedule cleanup every 60 seconds
+        this.cleanupExecutor.scheduleAtFixedRate(
+                this::cleanupExpiredSessions,
+                60, 60, TimeUnit.SECONDS
+        );
+
+        LOG.info("SessionManager initialized: inactivityTimeout=" + inactivityTimeoutSeconds +
+                "s, maxLifetime=" + maxLifetimeSeconds + "s");
     }
 
     /**
@@ -30,7 +58,6 @@ public class SessionManager {
                 "library=" + token.libraryPath() + "\n" +
                 "slot=" + token.slotId() + "\n";
 
-        LOG.fine(() -> "Configuring SunPKCS11 provider for token slot " + token.slotId());
         Provider provider = Security.getProvider("SunPKCS11");
         if (provider != null) {
             provider = provider.configure(config);
@@ -43,40 +70,31 @@ public class SessionManager {
         ks.load(null, pin.toCharArray());
 
         String sessionId = UUID.randomUUID().toString().replace("-", "");
-        sessions.put(sessionId, new SessionData(token, provider, ks, pin));
+        Instant now = Instant.now();
+        sessions.put(sessionId, new SessionData(token, provider, ks, pin, now, now));
 
-        // Audit: session opened
         auditLogger.logSessionOpened(sessionId, token.id());
-
-        LOG.info("Session opened: " + sessionId + " for token " + token.label());
+        LOG.info("Session opened: " + sessionId + " for token " + token.id());
         return sessionId;
     }
 
     /**
-     * Lists certificates available on the token for the given session.
+     * Lists certificates — also refreshes last activity.
      */
     public List<CertificateInfo> listCertificates(String sessionId) throws Exception {
         SessionData session = getSession(sessionId);
+        session.touch(); // Refresh activity
         List<CertificateInfo> certificates = new ArrayList<>();
 
-        LOG.fine(() -> "Listing certificates for session " + sessionId + " (KeyStore type: " + session.keyStore.getType() + ")");
-
         Enumeration<String> aliases = session.keyStore.aliases();
-        int aliasCount = 0;
-
         while (aliases.hasMoreElements()) {
             String alias = aliases.nextElement();
-            aliasCount++;
-            LOG.fine(() -> "Examining alias: '" + alias + "'");
-
             X509Certificate cert = null;
 
             if (session.keyStore.isCertificateEntry(alias)) {
                 cert = (X509Certificate) session.keyStore.getCertificate(alias);
-                LOG.fine(() -> "Found certificate entry for alias: " + alias);
             } else if (session.keyStore.isKeyEntry(alias)) {
                 cert = (X509Certificate) session.keyStore.getCertificate(alias);
-                LOG.fine(() -> "Found key entry certificate for alias: " + alias);
             }
 
             if (cert != null) {
@@ -100,28 +118,27 @@ public class SessionManager {
                         alias, subject, issuer, serialNumber,
                         notBefore, notAfter, keyType, keySize
                 ));
-                LOG.fine(() -> "Added certificate: alias=" + alias + ", subject=" + subject);
             }
         }
-
-        final int totalAliases = aliasCount;
-        LOG.fine(() -> "Enumerated " + totalAliases + " alias(es), returning " + certificates.size() + " certificate(s) for session " + sessionId);
-
         return certificates;
     }
 
     /**
-     * Gets the KeyStore for a session (used for signing operations).
+     * Gets the KeyStore — also refreshes last activity.
      */
     public KeyStore getKeyStore(String sessionId) throws Exception {
-        return getSession(sessionId).keyStore;
+        SessionData session = getSession(sessionId);
+        session.touch();
+        return session.keyStore;
     }
 
     /**
-     * Gets the token associated with a session.
+     * Gets the token — also refreshes last activity.
      */
     public TokenInfo getToken(String sessionId) throws Exception {
-        return getSession(sessionId).token;
+        SessionData session = getSession(sessionId);
+        session.touch();
+        return session.token;
     }
 
     /**
@@ -132,37 +149,79 @@ public class SessionManager {
         if (session != null) {
             try {
                 Security.removeProvider(session.provider.getName());
-                // Zero out PIN
                 Arrays.fill(session.pin.toCharArray(), '0');
             } catch (Exception e) {
-                LOG.fine("Exception while removing provider for session " + sessionId + ": " + e.getMessage());
+                LOG.fine("Exception removing provider: " + e.getMessage());
             }
-
-            // Audit: session closed
             auditLogger.logSessionClosed(sessionId, session.token.id());
-
             LOG.info("Session closed: " + sessionId);
-        } else {
-            // Audit: attempted to close non-existent session
-            auditLogger.logSessionNotFound(sessionId);
-            LOG.fine("Attempted to close non-existent session: " + sessionId);
         }
     }
 
     /**
-     * Checks if a session exists.
+     * Checks if a session exists and is not expired.
      */
     public boolean sessionExists(String sessionId) {
-        return sessions.containsKey(sessionId);
+        SessionData session = sessions.get(sessionId);
+        if (session == null) return false;
+        return !isExpired(session, Instant.now());
+    }
+
+    /**
+     * Shuts down the cleanup executor.
+     */
+    public void shutdown() {
+        cleanupExecutor.shutdown();
+        LOG.info("SessionManager shutdown");
+    }
+
+    /**
+     * Periodic cleanup of expired sessions.
+     */
+    private void cleanupExpiredSessions() {
+        Instant now = Instant.now();
+        int expiredCount = 0;
+
+        for (Map.Entry<String, SessionData> entry : sessions.entrySet()) {
+            if (isExpired(entry.getValue(), now)) {
+                String sessionId = entry.getKey();
+                closeSession(sessionId);
+                auditLogger.logSessionExpired(sessionId);
+                expiredCount++;
+            }
+        }
+
+        if (expiredCount > 0) {
+            LOG.info("Cleaned up " + expiredCount + " expired session(s)");
+        }
+    }
+
+    private boolean isExpired(SessionData session, Instant now) {
+        // Check max lifetime
+        if (session.createdAt.plusSeconds(maxLifetimeSeconds).isBefore(now)) {
+            return true;
+        }
+        // Check inactivity
+        if (session.lastActivity.plusSeconds(inactivityTimeoutSeconds).isBefore(now)) {
+            return true;
+        }
+        return false;
     }
 
     private SessionData getSession(String sessionId) throws Exception {
         SessionData session = sessions.get(sessionId);
         if (session == null) {
-            // Audit: session not found
             auditLogger.logSessionNotFound(sessionId);
             throw new Exception("Session not found: " + sessionId);
         }
+
+        // Check expiry
+        if (isExpired(session, Instant.now())) {
+            closeSession(sessionId);
+            auditLogger.logSessionExpired(sessionId);
+            throw new Exception("Session expired: " + sessionId);
+        }
+
         return session;
     }
 
@@ -171,12 +230,21 @@ public class SessionManager {
         final Provider provider;
         final KeyStore keyStore;
         final String pin;
+        final Instant createdAt;
+        volatile Instant lastActivity;
 
-        SessionData(TokenInfo token, Provider provider, KeyStore keyStore, String pin) {
+        SessionData(TokenInfo token, Provider provider, KeyStore keyStore, String pin,
+                    Instant createdAt, Instant lastActivity) {
             this.token = token;
             this.provider = provider;
             this.keyStore = keyStore;
             this.pin = pin;
+            this.createdAt = createdAt;
+            this.lastActivity = lastActivity;
+        }
+
+        void touch() {
+            this.lastActivity = Instant.now();
         }
     }
 }
