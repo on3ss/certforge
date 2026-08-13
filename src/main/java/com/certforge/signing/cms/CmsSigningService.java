@@ -11,6 +11,7 @@ import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 
 import java.util.Arrays;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class CmsSigningService {
@@ -20,9 +21,9 @@ public class CmsSigningService {
     public byte[] createDetachedSignature(byte[] content, CryptoSigner cryptoSigner)
             throws PdfSigningException {
         try {
-            LOG.info("Creating detached CMS signature over " + content.length + " bytes");
-            LOG.info("Signature algorithm: " + cryptoSigner.getSignatureAlgorithm());
-            LOG.info("Signer certificate: " +
+            LOG.fine(() -> "Creating detached CMS signature over " + content.length + " bytes");
+            LOG.fine(() -> "Signature algorithm: " + cryptoSigner.getSignatureAlgorithm());
+            LOG.fine(() -> "Signer certificate subject: " +
                     cryptoSigner.getCertificateChain()[0].getSubjectX500Principal().getName());
 
             CMSTypedData cmsData = new CMSProcessableByteArray(content);
@@ -46,12 +47,11 @@ public class CmsSigningService {
             CMSSignedData signedData = generator.generate(cmsData, false);
             byte[] encoded = signedData.getEncoded();
 
-            LOG.info("CMS signature created: " + encoded.length + " bytes");
+            LOG.fine(() -> "CMS signature created successfully: " + encoded.length + " bytes");
             return encoded;
 
         } catch (Exception e) {
-            LOG.severe("Failed to create CMS signature: " + e.getMessage());
-            e.printStackTrace();
+            LOG.log(Level.SEVERE, "Failed to create CMS signature: " + e.getMessage(), e);
             throw new PdfSigningException("Failed to create CMS signature", e);
         }
     }

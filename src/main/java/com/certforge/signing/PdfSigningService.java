@@ -20,6 +20,7 @@ import java.io.InputStream;
 import java.security.cert.X509Certificate;
 import java.util.Calendar;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class PdfSigningService {
@@ -41,7 +42,7 @@ public class PdfSigningService {
     public byte[] signPdf(String sessionId, String alias, byte[] pdfBytes)
             throws PdfSigningException, SigningKeyNotFoundException, InvalidCertificateException {
         LOG.info("Starting PDF signing with alias: " + alias);
-        LOG.info("PDF input size: " + pdfBytes.length + " bytes");
+        LOG.fine(() -> "PDF input size: " + pdfBytes.length + " bytes");
 
         // 1. Get signing key
         SigningKey signingKey = signingKeyProvider.getSigningKey(sessionId, alias);
@@ -85,19 +86,19 @@ public class PdfSigningService {
             byte[] cmsSignature;
             try (InputStream content = externalSigning.getContent()) {
                 byte[] contentBytes = content.readAllBytes();
-                LOG.info("PDF content to sign: " + contentBytes.length + " bytes");
+                LOG.fine(() -> "PDF content to sign: " + contentBytes.length + " bytes");
 
                 // Create CMS signature
                 cmsSignature = cmsSigningService.createDetachedSignature(
                         contentBytes, cryptoSigner);
-                LOG.info("CMS signature size: " + cmsSignature.length + " bytes");
+                LOG.fine(() -> "CMS signature size: " + cmsSignature.length + " bytes");
             }
 
             // Set the CMS signature
             externalSigning.setSignature(cmsSignature);
 
             byte[] signedPdf = output.toByteArray();
-            LOG.info("Signed PDF size: " + signedPdf.length + " bytes");
+            LOG.info("PDF successfully signed. Final size: " + signedPdf.length + " bytes");
 
             // Verify signature was embedded
             verifySignedPdf(signedPdf);
@@ -105,8 +106,7 @@ public class PdfSigningService {
             return signedPdf;
 
         } catch (Exception e) {
-            LOG.severe("PDF signing failed: " + e.getMessage());
-            e.printStackTrace();
+            LOG.log(Level.SEVERE, "PDF signing failed for alias " + alias + ": " + e.getMessage(), e);
             throw new PdfSigningException("Failed to sign PDF", e);
         }
     }
@@ -117,13 +117,13 @@ public class PdfSigningService {
     private void verifySignedPdf(byte[] signedPdf) {
         try (PDDocument signedDocument = Loader.loadPDF(signedPdf)) {
             List<PDSignature> signatures = signedDocument.getSignatureDictionaries();
-            LOG.info("Signatures found in signed PDF: " + signatures.size());
+            LOG.fine(() -> "Signatures found in signed PDF: " + signatures.size());
 
             for (PDSignature sig : signatures) {
-                LOG.info("  Signature name: " + sig.getName());
-                LOG.info("  SubFilter: " + sig.getSubFilter());
-                LOG.info("  Contents length: " + (sig.getContents() != null ? sig.getContents().length : "null"));
-                LOG.info("  ByteRange: " + java.util.Arrays.toString(sig.getByteRange()));
+                LOG.fine(() -> "  Signature name: " + sig.getName()
+                        + ", SubFilter: " + sig.getSubFilter()
+                        + ", Contents length: " + (sig.getContents() != null ? sig.getContents().length : "null")
+                        + ", ByteRange: " + java.util.Arrays.toString(sig.getByteRange()));
             }
         } catch (Exception e) {
             LOG.warning("Failed to verify signed PDF: " + e.getMessage());

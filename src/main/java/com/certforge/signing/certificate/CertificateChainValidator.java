@@ -1,11 +1,8 @@
-// certificate/CertificateChainValidator.java
 package com.certforge.signing.certificate;
 
 import com.certforge.signing.exception.InvalidCertificateException;
 
 import java.security.cert.X509Certificate;
-import java.time.Instant;
-import java.util.Date;
 import java.util.logging.Logger;
 
 /**
@@ -41,6 +38,6 @@ public class CertificateChainValidator {
             throw new InvalidCertificateException("Unsupported key algorithm: " + algorithm);
         }
 
-        LOG.fine("Certificate chain validated: " + leaf.getSubjectX500Principal().getName());
+        LOG.fine(() -> "Certificate chain validated for subject: " + leaf.getSubjectX500Principal().getName());
     }
 }

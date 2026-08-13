@@ -6,6 +6,7 @@ import java.security.PrivateKey;
 import java.security.Provider;
 import java.security.Signature;
 import java.security.cert.X509Certificate;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class Pkcs11CryptoSigner implements CryptoSigner {
@@ -30,22 +31,20 @@ public class Pkcs11CryptoSigner implements CryptoSigner {
     @Override
     public byte[] sign(byte[] data) throws TokenSigningException {
         try {
-            LOG.info("PKCS#11 signing " + data.length + " bytes using " + signatureAlgorithm);
-            LOG.info("Provider: " + pkcs11Provider.getName());
-            LOG.info("PrivateKey class: " + privateKey.getClass().getName());
-            LOG.info("PrivateKey algorithm: " + privateKey.getAlgorithm());
+            LOG.fine(() -> "PKCS#11 signing " + data.length + " bytes using " + signatureAlgorithm
+                    + " with provider " + pkcs11Provider.getName()
+                    + " (" + privateKey.getAlgorithm() + " key)");
 
             Signature signature = Signature.getInstance(signatureAlgorithm, pkcs11Provider);
             signature.initSign(privateKey);
             signature.update(data);
             byte[] signatureBytes = signature.sign();
 
-            LOG.info("PKCS#11 signature generated: " + signatureBytes.length + " bytes");
+            LOG.fine(() -> "PKCS#11 signature generated: " + signatureBytes.length + " bytes");
             return signatureBytes;
 
         } catch (Exception e) {
-            LOG.severe("PKCS#11 signing failed: " + e.getMessage());
-            e.printStackTrace();
+            LOG.log(Level.SEVERE, "PKCS#11 signing failed: " + e.getMessage(), e);
             throw new TokenSigningException(
                     "Token rejected the signing operation: " + e.getMessage(), e);
         }
