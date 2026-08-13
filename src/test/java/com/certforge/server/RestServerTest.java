@@ -3,7 +3,7 @@ package com.certforge.server;
 import com.certforge.auth.Authenticator;
 import com.certforge.discovery.TokenDiscoverer;
 import com.certforge.discovery.TokenInfo;
-import org.junit.jupiter.api.AfterEach;
+import com.certforge.session.SessionManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -15,6 +15,7 @@ import java.net.http.HttpResponse;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RestServerTest {
 
@@ -24,22 +25,15 @@ class RestServerTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        // Use a static token list: one valid key "good-key"
         Authenticator auth = apiKey -> apiKey.equals("good-key");
-        // TokenDiscoverer that returns a fixed list
         TokenDiscoverer discoverer = () -> List.of(
                 new TokenInfo("slot-1", "TestToken", "TestManuf", "1234",
                         "/lib/test.so", 1L)
         );
-        server = new RestServer(discoverer, auth);
-        port = server.start(0); // 0 = random port
+        SessionManager sessionManager = new SessionManager();
+        server = new RestServer(discoverer, auth, sessionManager);
+        port = server.start(0);
         client = HttpClient.newHttpClient();
-    }
-
-    @AfterEach
-    void tearDown() {
-        // Stop the server? Not necessary if we just let JVM exit, but to be safe we can.
-        // HttpServer doesn't have a stop method easily accessible. We'll ignore.
     }
 
     @Test
@@ -71,7 +65,7 @@ class RestServerTest {
                 .build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(200, response.statusCode());
-        // Optionally check body contains token
+        assertTrue(response.body().contains("TestToken"));
     }
 
     @Test
@@ -86,13 +80,48 @@ class RestServerTest {
     }
 
     @Test
-    void tokensEndpointReturns401WithWrongAuthScheme() throws Exception {
+    void sessionsEndpointReturns400WithMissingFields() throws Exception {
         var request = HttpRequest.newBuilder()
-                .uri(URI.create("http://127.0.0.1:" + port + "/v1/tokens"))
-                .header("Authorization", "Basic good-key")
+                .uri(URI.create("http://127.0.0.1:" + port + "/v1/sessions"))
+                .header("Authorization", "Bearer good-key")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, response.statusCode());
+    }
+
+    @Test
+    void sessionsEndpointReturns404ForUnknownToken() throws Exception {
+        var request = HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/v1/sessions"))
+                .header("Authorization", "Bearer good-key")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"tokenId\":\"unknown\",\"pin\":\"1234\"}"))
+                .build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(404, response.statusCode());
+    }
+
+    @Test
+    void sessionByIdReturns404ForUnknownSession() throws Exception {
+        var request = HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/v1/sessions/nonexistent/certificates"))
+                .header("Authorization", "Bearer good-key")
                 .GET()
                 .build();
         var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        assertEquals(401, response.statusCode());
+        assertEquals(404, response.statusCode());
+    }
+
+    @Test
+    void sessionDeleteReturns200() throws Exception {
+        var request = HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/v1/sessions/some-session-id"))
+                .header("Authorization", "Bearer good-key")
+                .DELETE()
+                .build();
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
     }
 }

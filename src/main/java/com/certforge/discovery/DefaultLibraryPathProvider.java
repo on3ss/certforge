@@ -3,11 +3,14 @@ package com.certforge.discovery;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.logging.Logger;
 
 /**
  * Combines hard‑coded OS‑specific paths with the CERTFORGE_LIBRARIES environment variable.
  */
 public class DefaultLibraryPathProvider implements LibraryPathProvider {
+
+    private static final Logger LOG = Logger.getLogger(DefaultLibraryPathProvider.class.getName());
 
     @Override
     public List<String> getPaths() {
@@ -44,7 +47,10 @@ public class DefaultLibraryPathProvider implements LibraryPathProvider {
         if (extra != null && !extra.isBlank()) {
             for (String part : extra.split(",")) {
                 String trimmed = part.trim();
-                if (!trimmed.isEmpty()) paths.add(trimmed);
+                if (!trimmed.isEmpty()) {
+                    paths.add(trimmed);
+                    LOG.fine(() -> "Added library path from CERTFORGE_LIBRARIES: " + trimmed);
+                }
             }
         }
         return paths;

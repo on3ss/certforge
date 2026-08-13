@@ -11,10 +11,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ConfigLoader {
+
+    private static final Logger LOG = Logger.getLogger(ConfigLoader.class.getName());
 
     private static final int DEFAULT_PORT = 8443;
     private static final List<String> DEFAULT_API_KEYS = Collections.emptyList();
@@ -30,6 +33,7 @@ public class ConfigLoader {
     }
 
     static Config load(Path configPath, Function<String, String> resolver) throws Exception {
+        LOG.fine(() -> "Loading configuration file from " + configPath);
         Map<String, Object> raw = parseYaml(configPath);
         raw = interpolate(raw, resolver);
 
@@ -48,6 +52,7 @@ public class ConfigLoader {
         Map<String, Object> logging = getMap(raw, "logging");
         String logLevel = getString(logging, "level", DEFAULT_LOGGING_LEVEL);
 
+        LOG.fine(() -> "Configuration parsed successfully: port=" + port + ", apiKeysCount=" + apiKeys.size() + ", logLevel=" + logLevel);
         return new Config(port, apiKeys, inactivity, maxLifetime, auditPath, logLevel);
     }
 

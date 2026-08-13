@@ -12,8 +12,26 @@ java {
     }
 }
 
+compileJava {
+    options.compilerArgs += [
+        '--add-modules', 'jdk.crypto.cryptoki',
+        '--add-exports', 'jdk.crypto.cryptoki/sun.security.pkcs11=ALL-UNNAMED'
+    ]
+}
+
+compileTestJava {
+    options.compilerArgs += [
+        '--add-modules', 'jdk.crypto.cryptoki',
+        '--add-exports', 'jdk.crypto.cryptoki/sun.security.pkcs11=ALL-UNNAMED'
+    ]
+}
+
 application {
     mainClass = 'com.certforge.GatewayApp'
+    applicationDefaultJvmArgs = [
+        '--add-modules', 'jdk.crypto.cryptoki',
+        '--add-exports', 'jdk.crypto.cryptoki/sun.security.pkcs11=ALL-UNNAMED'
+    ]
 }
 
 repositories {
@@ -31,6 +49,10 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    jvmArgs += [
+        '--add-modules', 'jdk.crypto.cryptoki',
+        '--add-exports', 'jdk.crypto.cryptoki/sun.security.pkcs11=ALL-UNNAMED'
+    ]
 }
 
 tasks.register('fatJar', Jar) {

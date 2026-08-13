@@ -3,6 +3,8 @@ package com.certforge.server;
 import com.certforge.auth.Authenticator;
 import com.certforge.discovery.TokenDiscoverer;
 import com.certforge.discovery.TokenInfo;
+import com.certforge.session.CertificateInfo;
+import com.certforge.session.SessionManager;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -12,6 +14,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class RestServer {
@@ -19,16 +22,21 @@ public class RestServer {
     private static final Logger LOG = Logger.getLogger(RestServer.class.getName());
     private final TokenDiscoverer discoverer;
     private final Authenticator authenticator;
+    private final SessionManager sessionManager;
 
-    public RestServer(TokenDiscoverer discoverer, Authenticator authenticator) {
+    public RestServer(TokenDiscoverer discoverer, Authenticator authenticator,
+                      SessionManager sessionManager) {
         this.discoverer = discoverer;
         this.authenticator = authenticator;
+        this.sessionManager = sessionManager;
     }
 
     public int start(int port) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         server.createContext("/health", this::handleHealth);
         server.createContext("/v1/tokens", withAuth(this::handleTokens));
+        server.createContext("/v1/sessions", withAuth(this::handleSessions));
+        server.createContext("/v1/sessions/", withAuth(this::handleSessionById));
         server.setExecutor(java.util.concurrent.Executors.newFixedThreadPool(4));
         server.start();
         int actualPort = server.getAddress().getPort();
@@ -39,6 +47,7 @@ public class RestServer {
     private HttpHandler withAuth(HttpHandler handler) {
         return exchange -> {
             if (!isAuthenticated(exchange)) {
+                LOG.warning("Unauthorized access attempt to " + exchange.getRequestURI());
                 sendJson(exchange, 401, "{\"error\":\"unauthorized\",\"message\":\"Invalid or missing API key\"}");
                 return;
             }
@@ -64,13 +73,14 @@ public class RestServer {
             exchange.sendResponseHeaders(405, -1);
             return;
         }
+        LOG.fine("Processing GET /v1/tokens request");
         List<TokenInfo> tokens = discoverer.discover();
         StringBuilder json = new StringBuilder("{\"tokens\":[");
         for (int i = 0; i < tokens.size(); i++) {
             TokenInfo t = tokens.get(i);
             if (i > 0) json.append(",");
             json.append("{")
-                    .append("\"id\":\"").append(t.getId()).append("\",")
+                    .append("\"id\":\"").append(escape(t.getId())).append("\",")
                     .append("\"label\":\"").append(escape(t.getLabel())).append("\",")
                     .append("\"manufacturer\":\"").append(escape(t.getManufacturer())).append("\",")
                     .append("\"serial\":\"").append(escape(t.getSerial())).append("\",")
@@ -82,8 +92,151 @@ public class RestServer {
         sendJson(exchange, 200, json.toString());
     }
 
+    private void handleSessions(HttpExchange exchange) throws IOException {
+        if ("POST".equals(exchange.getRequestMethod())) {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String tokenId = extractJsonValue(body, "tokenId");
+            String pin = extractJsonValue(body, "pin");
+
+            LOG.fine(() -> "Processing POST /v1/sessions for tokenId=" + tokenId);
+
+            if (tokenId == null || pin == null) {
+                LOG.warning("Invalid session creation payload: missing tokenId or pin");
+                sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"tokenId and pin are required\"}");
+                return;
+            }
+
+            TokenInfo token = findToken(tokenId);
+            if (token == null) {
+                LOG.warning("Token not found during session creation: " + tokenId);
+                sendJson(exchange, 404, "{\"error\":\"token_not_found\",\"message\":\"Token not found: " + escape(tokenId) + "\"}");
+                return;
+            }
+
+            try {
+                String sessionId = sessionManager.openSession(token, pin);
+                LOG.info("Session successfully opened: " + sessionId + " for token " + token.getId());
+                sendJson(exchange, 200, "{\"sessionId\":\"" + sessionId + "\"}");
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "Failed to open session for token " + tokenId + ": " + e.getMessage(), e);
+                sendJson(exchange, 401, "{\"error\":\"session_open_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
+            }
+        } else {
+            exchange.sendResponseHeaders(405, -1);
+        }
+    }
+
+    private void handleSessionById(HttpExchange exchange) throws IOException {
+        String path = exchange.getRequestURI().getPath();
+        String[] parts = path.split("/");
+
+        // Path format: /v1/sessions/{sessionId} or /v1/sessions/{sessionId}/certificates
+        // parts = ["", "v1", "sessions", "{sessionId}"] or ["", "v1", "sessions", "{sessionId}", "certificates"]
+
+        if (parts.length < 4) {
+            LOG.warning("Invalid session path format: " + path);
+            sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"Invalid session path\"}");
+            return;
+        }
+
+        String sessionId = parts[3];
+        boolean listCerts = parts.length >= 5 && "certificates".equals(parts[4]);
+
+        if ("GET".equals(exchange.getRequestMethod()) && listCerts) {
+            LOG.fine(() -> "Listing certificates for session ID " + sessionId);
+            try {
+                List<CertificateInfo> certs = sessionManager.listCertificates(sessionId);
+                StringBuilder json = new StringBuilder("{\"certificates\":[");
+                for (int i = 0; i < certs.size(); i++) {
+                    CertificateInfo c = certs.get(i);
+                    if (i > 0) json.append(",");
+                    json.append("{")
+                            .append("\"alias\":\"").append(escape(c.getAlias())).append("\",")
+                            .append("\"subject\":\"").append(escape(c.getSubject())).append("\",")
+                            .append("\"issuer\":\"").append(escape(c.getIssuer())).append("\",")
+                            .append("\"serialNumber\":\"").append(escape(c.getSerialNumber())).append("\",")
+                            .append("\"notBefore\":\"").append(escape(c.getNotBefore())).append("\",")
+                            .append("\"notAfter\":\"").append(escape(c.getNotAfter())).append("\",")
+                            .append("\"keyType\":\"").append(escape(c.getKeyType())).append("\",")
+                            .append("\"keySize\":").append(c.getKeySize())
+                            .append("}");
+                }
+                json.append("]}");
+                sendJson(exchange, 200, json.toString());
+            } catch (Exception e) {
+                LOG.warning("Session not found or failed to list certificates for session ID " + sessionId + ": " + e.getMessage());
+                sendJson(exchange, 404, "{\"error\":\"session_not_found\",\"message\":\"" + escape(e.getMessage()) + "\"}");
+            }
+        } else if ("DELETE".equals(exchange.getRequestMethod())) {
+            LOG.fine(() -> "Closing session ID " + sessionId);
+            sessionManager.closeSession(sessionId);
+            sendJson(exchange, 200, "{\"status\":\"closed\"}");
+        } else {
+            exchange.sendResponseHeaders(405, -1);
+        }
+    }
+
+    private TokenInfo findToken(String tokenId) {
+        List<TokenInfo> tokens = discoverer.discover();
+        for (TokenInfo token : tokens) {
+            if (token.getId().equals(tokenId)) {
+                return token;
+            }
+        }
+        return null;
+    }
+
+    private String extractJsonValue(String json, String key) {
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex < 0) return null;
+
+        int colonIndex = json.indexOf(":", keyIndex + searchKey.length());
+        if (colonIndex < 0) return null;
+
+        int valueStart = colonIndex + 1;
+        while (valueStart < json.length() && Character.isWhitespace(json.charAt(valueStart))) {
+            valueStart++;
+        }
+
+        if (valueStart < json.length() && json.charAt(valueStart) == '"') {
+            StringBuilder value = new StringBuilder();
+            for (int i = valueStart + 1; i < json.length(); i++) {
+                char c = json.charAt(i);
+                if (c == '\\' && i + 1 < json.length()) {
+                    value.append(json.charAt(i + 1));
+                    i++;
+                } else if (c == '"') {
+                    return value.toString();
+                } else {
+                    value.append(c);
+                }
+            }
+        }
+
+        return null;
+    }
+
     private String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (char c : s.toCharArray()) {
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
     }
 
     private void sendJson(HttpExchange exchange, int code, String body) throws IOException {

@@ -8,7 +8,8 @@ public class TokenInfo {
     private final String libraryPath;
     private final long slotId;
 
-    public TokenInfo(String id, String label, String manufacturer, String serial, String libraryPath, long slotId) {
+    public TokenInfo(String id, String label, String manufacturer, String serial,
+                     String libraryPath, long slotId) {
         this.id = id;
         this.label = label;
         this.manufacturer = manufacturer;
@@ -17,10 +18,10 @@ public class TokenInfo {
         this.slotId = slotId;
     }
 
-    public String getId() {return id;}
-    public String getLabel() {return label;}
-    public String getManufacturer() {return manufacturer;}
-    public String getSerial() {return serial;}
-    public String getLibraryPath() {return libraryPath;}
-    public long getSlotId() {return slotId;}
+    public String getId() { return id; }
+    public String getLabel() { return label; }
+    public String getManufacturer() { return manufacturer; }
+    public String getSerial() { return serial; }
+    public String getLibraryPath() { return libraryPath; }
+    public long getSlotId() { return slotId; }
 }
