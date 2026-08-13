@@ -69,3 +69,33 @@
 {"timestamp":"2026-08-13T12:17:23.893712200Z","type":"DOCUMENT_SIGNED","pdfSize":"25819","alias":"rsaKey","result":"success","sessionId":"60c7baf74a454af0a406cfe710c2a40d","signatureSize":"1383"}
 {"timestamp":"2026-08-13T12:17:37.623624300Z","type":"AUTH_SUCCESS","path":"/v1/verify","remoteAddress":"127.0.0.1"}
 {"timestamp":"2026-08-13T12:17:37.686127800Z","type":"DOCUMENT_VERIFIED","result":"valid","signatureCount":"1"}
+{"timestamp":"2026-08-13T12:21:51.270712900Z","type":"GATEWAY_STOPPED"}
+{"timestamp":"2026-08-13T12:22:02.673758400Z","type":"GATEWAY_STARTED","version":"0.1.0"}
+{"timestamp":"2026-08-13T12:22:08.677337200Z","type":"AUTH_SUCCESS","path":"/v1/tokens","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T12:22:08.679335200Z","type":"TOKEN_DISCOVERY_STARTED","libraries":"6"}
+{"timestamp":"2026-08-13T12:22:08.707284500Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\SoftHSM2\\lib\\softhsm2-x64.dll"}
+{"timestamp":"2026-08-13T12:22:08.709280200Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\SoftHSM2\\lib\\softhsm2.dll"}
+{"timestamp":"2026-08-13T12:22:08.710282600Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\Windows\\System32\\eTPKCS11.dll"}
+{"timestamp":"2026-08-13T12:22:08.711280800Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\Windows\\System32\\ykcs11.dll"}
+{"timestamp":"2026-08-13T12:22:08.737305300Z","type":"LIBRARY_PROBED","result":"no_tokens","library":"C:\\Windows\\System32\\opensc-pkcs11.dll"}
+{"timestamp":"2026-08-13T12:22:08.752282300Z","type":"LIBRARY_PROBED","result":"success","library":"E:\\SoftHSM2\\lib\\softhsm2-x64.dll"}
+{"timestamp":"2026-08-13T12:22:08.753050900Z","type":"TOKEN_FOUND","serial":"09af31a70edab9a4","label":"SoftHSMToken1","tokenId":"slot-249215396"}
+{"timestamp":"2026-08-13T12:22:08.753050900Z","type":"TOKEN_FOUND","serial":"","label":"","tokenId":"slot-1"}
+{"timestamp":"2026-08-13T12:22:08.754057600Z","type":"TOKEN_DISCOVERY_COMPLETED","tokensFound":"2"}
+{"timestamp":"2026-08-13T12:22:11.345522300Z","type":"AUTH_SUCCESS","path":"/v1/sessions","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T12:22:11.347547800Z","type":"TOKEN_DISCOVERY_STARTED","libraries":"6"}
+{"timestamp":"2026-08-13T12:22:11.352521800Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\SoftHSM2\\lib\\softhsm2-x64.dll"}
+{"timestamp":"2026-08-13T12:22:11.353522Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\SoftHSM2\\lib\\softhsm2.dll"}
+{"timestamp":"2026-08-13T12:22:11.354522Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\Windows\\System32\\eTPKCS11.dll"}
+{"timestamp":"2026-08-13T12:22:11.355521900Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\Windows\\System32\\ykcs11.dll"}
+{"timestamp":"2026-08-13T12:22:11.361521900Z","type":"LIBRARY_PROBED","result":"no_tokens","library":"C:\\Windows\\System32\\opensc-pkcs11.dll"}
+{"timestamp":"2026-08-13T12:22:11.369522900Z","type":"LIBRARY_PROBED","result":"success","library":"E:\\SoftHSM2\\lib\\softhsm2-x64.dll"}
+{"timestamp":"2026-08-13T12:22:11.370522100Z","type":"TOKEN_FOUND","serial":"09af31a70edab9a4","label":"SoftHSMToken1","tokenId":"slot-249215396"}
+{"timestamp":"2026-08-13T12:22:11.370522100Z","type":"TOKEN_FOUND","serial":"","label":"","tokenId":"slot-1"}
+{"timestamp":"2026-08-13T12:22:11.370522100Z","type":"TOKEN_DISCOVERY_COMPLETED","tokensFound":"2"}
+{"timestamp":"2026-08-13T12:22:11.430034200Z","type":"SESSION_OPENED","sessionId":"9caaa983af8d40e1a4b7f4d0a95c4a28","tokenId":"slot-249215396"}
+{"timestamp":"2026-08-13T12:22:16.461257500Z","type":"AUTH_SUCCESS","path":"/v1/sessions/9caaa983af8d40e1a4b7f4d0a95c4a28/certificates","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T12:22:25.378032Z","type":"AUTH_SUCCESS","path":"/v1/sessions/9caaa983af8d40e1a4b7f4d0a95c4a28/jobs","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T12:22:25.517785700Z","type":"DOCUMENT_SIGNED","alias":"rsaKey","result":"success","sessionId":"9caaa983af8d40e1a4b7f4d0a95c4a28","signatureSize":"1383","pdfSize":"25819"}
+{"timestamp":"2026-08-13T12:22:38.707411300Z","type":"AUTH_SUCCESS","path":"/v1/verify","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T12:22:38.761408300Z","type":"DOCUMENT_VERIFIED","result":"valid","signatureCount":"1"}

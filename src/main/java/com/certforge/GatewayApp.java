@@ -42,8 +42,12 @@ public class GatewayApp {
         auditLogger.logStarted(VERSION);
 
         // 3. Authentication
+        if (config.apiKeys().isEmpty()) {
+            LOG.warning("SECURITY WARNING: No API keys configured! Gateway authentication is open.");
+        } else {
+            LOG.info("Authenticator initialized with " + config.apiKeys().size() + " API key(s)");
+        }
         Authenticator authenticator = new ConfigAuthenticator(config.apiKeys());
-        LOG.info("Authenticator initialized with " + config.apiKeys().size() + " API key(s)");
 
         // 4. Port override via environment variable
         int port = resolvePort(config);

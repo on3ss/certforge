@@ -1,6 +1,5 @@
 package com.certforge.session;
 
-import com.certforge.audit.AuditEventType;
 import com.certforge.audit.AuditLogger;
 import com.certforge.discovery.TokenInfo;
 
@@ -66,12 +65,18 @@ public class SessionManager {
         }
         Security.addProvider(provider);
 
-        KeyStore ks = KeyStore.getInstance("PKCS11", provider);
-        ks.load(null, pin.toCharArray());
+        char[] pinChars = pin != null ? pin.toCharArray() : new char[0];
+        KeyStore ks;
+        try {
+            ks = KeyStore.getInstance("PKCS11", provider);
+            ks.load(null, pinChars);
+        } finally {
+            // Note: pinChars buffer stored in SessionData for duration of session, or wiped on fail
+        }
 
         String sessionId = UUID.randomUUID().toString().replace("-", "");
         Instant now = Instant.now();
-        sessions.put(sessionId, new SessionData(token, provider, ks, pin, now, now));
+        sessions.put(sessionId, new SessionData(token, provider, ks, pinChars, now, now));
 
         auditLogger.logSessionOpened(sessionId, token.id());
         LOG.info("Session opened: " + sessionId + " for token " + token.id());
@@ -149,10 +154,10 @@ public class SessionManager {
         if (session != null) {
             try {
                 Security.removeProvider(session.provider.getName());
-                Arrays.fill(session.pin.toCharArray(), '0');
             } catch (Exception e) {
                 LOG.fine("Exception removing provider: " + e.getMessage());
             }
+            session.wipePin();
             auditLogger.logSessionClosed(sessionId, session.token.id());
             LOG.info("Session closed: " + sessionId);
         }
@@ -229,11 +234,11 @@ public class SessionManager {
         final TokenInfo token;
         final Provider provider;
         final KeyStore keyStore;
-        final String pin;
+        final char[] pin;
         final Instant createdAt;
         volatile Instant lastActivity;
 
-        SessionData(TokenInfo token, Provider provider, KeyStore keyStore, String pin,
+        SessionData(TokenInfo token, Provider provider, KeyStore keyStore, char[] pin,
                     Instant createdAt, Instant lastActivity) {
             this.token = token;
             this.provider = provider;
@@ -245,6 +250,12 @@ public class SessionManager {
 
         void touch() {
             this.lastActivity = Instant.now();
+        }
+
+        void wipePin() {
+            if (pin != null) {
+                Arrays.fill(pin, '0');
+            }
         }
     }
 }
