@@ -1,5 +1,6 @@
 package com.certforge.session;
 
+import com.certforge.audit.AuditLogger;
 import com.certforge.discovery.TokenInfo;
 
 import java.security.KeyStore;
@@ -15,16 +16,21 @@ public class SessionManager {
     private static final Logger LOG = Logger.getLogger(SessionManager.class.getName());
 
     private final Map<String, SessionData> sessions = new ConcurrentHashMap<>();
+    private final AuditLogger auditLogger;
+
+    public SessionManager(AuditLogger auditLogger) {
+        this.auditLogger = auditLogger;
+    }
 
     /**
      * Opens a session to the given token using the PIN.
      */
     public String openSession(TokenInfo token, String pin) throws Exception {
-        String config = "--name=CertForge-" + token.getId() + "\n" +
-                "library=" + token.getLibraryPath() + "\n" +
-                "slot=" + token.getSlotId() + "\n";
+        String config = "--name=CertForge-" + token.id() + "\n" +
+                "library=" + token.libraryPath() + "\n" +
+                "slot=" + token.slotId() + "\n";
 
-        LOG.fine(() -> "Configuring SunPKCS11 provider for token slot " + token.getSlotId());
+        LOG.fine(() -> "Configuring SunPKCS11 provider for token slot " + token.slotId());
         Provider provider = Security.getProvider("SunPKCS11");
         if (provider != null) {
             provider = provider.configure(config);
@@ -39,7 +45,10 @@ public class SessionManager {
         String sessionId = UUID.randomUUID().toString().replace("-", "");
         sessions.put(sessionId, new SessionData(token, provider, ks, pin));
 
-        LOG.info("Session opened: " + sessionId + " for token " + token.getLabel());
+        // Audit: session opened
+        auditLogger.logSessionOpened(sessionId, token.id());
+
+        LOG.info("Session opened: " + sessionId + " for token " + token.label());
         return sessionId;
     }
 
@@ -128,8 +137,14 @@ public class SessionManager {
             } catch (Exception e) {
                 LOG.fine("Exception while removing provider for session " + sessionId + ": " + e.getMessage());
             }
+
+            // Audit: session closed
+            auditLogger.logSessionClosed(sessionId, session.token.id());
+
             LOG.info("Session closed: " + sessionId);
         } else {
+            // Audit: attempted to close non-existent session
+            auditLogger.logSessionNotFound(sessionId);
             LOG.fine("Attempted to close non-existent session: " + sessionId);
         }
     }
@@ -144,6 +159,8 @@ public class SessionManager {
     private SessionData getSession(String sessionId) throws Exception {
         SessionData session = sessions.get(sessionId);
         if (session == null) {
+            // Audit: session not found
+            auditLogger.logSessionNotFound(sessionId);
             throw new Exception("Session not found: " + sessionId);
         }
         return session;

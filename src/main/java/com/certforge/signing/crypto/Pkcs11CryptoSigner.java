@@ -1,5 +1,6 @@
 package com.certforge.signing.crypto;
 
+import com.certforge.audit.AuditLogger;
 import com.certforge.signing.exception.TokenSigningException;
 
 import java.security.PrivateKey;
@@ -17,15 +18,18 @@ public class Pkcs11CryptoSigner implements CryptoSigner {
     private final X509Certificate[] certificateChain;
     private final Provider pkcs11Provider;
     private final String signatureAlgorithm;
+    private final AuditLogger auditLogger;
 
     public Pkcs11CryptoSigner(PrivateKey privateKey,
                               X509Certificate[] certificateChain,
                               Provider pkcs11Provider,
-                              String signatureAlgorithm) {
+                              String signatureAlgorithm,
+                              AuditLogger auditLogger) {
         this.privateKey = privateKey;
         this.certificateChain = certificateChain;
         this.pkcs11Provider = pkcs11Provider;
         this.signatureAlgorithm = signatureAlgorithm;
+        this.auditLogger = auditLogger;
     }
 
     @Override
@@ -45,6 +49,11 @@ public class Pkcs11CryptoSigner implements CryptoSigner {
 
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "PKCS#11 signing failed: " + e.getMessage(), e);
+
+            // Audit: token signing failed
+            auditLogger.logError("pkcs11_signing",
+                    "Token rejected signing operation (" + signatureAlgorithm + "): " + e.getMessage());
+
             throw new TokenSigningException(
                     "Token rejected the signing operation: " + e.getMessage(), e);
         }

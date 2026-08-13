@@ -1,5 +1,6 @@
 package com.certforge.server;
 
+import com.certforge.audit.AuditLogger;
 import com.certforge.auth.Authenticator;
 import com.certforge.discovery.TokenDiscoverer;
 import com.certforge.discovery.TokenInfo;
@@ -11,25 +12,33 @@ import com.certforge.signing.crypto.SigningKeyProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class RestServerTest {
 
+    @TempDir
+    Path tempDir;
+
     private RestServer server;
     private int port;
     private HttpClient client;
-    private SessionManager sessionManager;
+    private AuditLogger auditLogger;
 
     @BeforeEach
     void setUp() throws IOException {
+        // Create audit logger writing to temp directory
+        auditLogger = new AuditLogger(tempDir.resolve("audit.log"));
+
         // Use a static token list: one valid key "good-key"
         Authenticator auth = apiKey -> apiKey.equals("good-key");
 
@@ -39,18 +48,18 @@ class RestServerTest {
                         "/lib/test.so", 1L)
         );
 
-        // Create SessionManager
-        sessionManager = new SessionManager();
+        // Create SessionManager with audit logger
+        SessionManager sessionManager = new SessionManager(auditLogger);
 
-        // Create signing service components
-        SigningKeyProvider signingKeyProvider = new SigningKeyProvider(sessionManager);
-        CertificateChainValidator certValidator = new CertificateChainValidator();
-        CmsSigningService cmsSigningService = new CmsSigningService();
+        // Create signing service components with audit logger
+        SigningKeyProvider signingKeyProvider = new SigningKeyProvider(sessionManager, auditLogger);
+        CertificateChainValidator certValidator = new CertificateChainValidator(auditLogger);
+        CmsSigningService cmsSigningService = new CmsSigningService(auditLogger);
         PdfSigningService pdfSigningService = new PdfSigningService(
-                signingKeyProvider, certValidator, cmsSigningService
+                signingKeyProvider, certValidator, cmsSigningService, auditLogger
         );
 
-        server = new RestServer(discoverer, auth, sessionManager, pdfSigningService);
+        server = new RestServer(discoverer, auth, sessionManager, pdfSigningService, auditLogger);
         port = server.start(0); // 0 = random port
         client = HttpClient.newHttpClient();
     }

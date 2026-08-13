@@ -1,0 +1,16 @@
+{"timestamp":"2026-08-13T11:53:44.816637500Z","type":"GATEWAY_STARTED","version":"0.1.0"}
+{"timestamp":"2026-08-13T11:53:49.029747500Z","type":"AUTH_SUCCESS","path":"/v1/sessions","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T11:53:49.030747900Z","type":"TOKEN_DISCOVERY_STARTED","libraries":"6"}
+{"timestamp":"2026-08-13T11:53:49.065267600Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\SoftHSM2\\lib\\softhsm2-x64.dll"}
+{"timestamp":"2026-08-13T11:53:49.067266800Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\SoftHSM2\\lib\\softhsm2.dll"}
+{"timestamp":"2026-08-13T11:53:49.068266500Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\Windows\\System32\\eTPKCS11.dll"}
+{"timestamp":"2026-08-13T11:53:49.069267200Z","type":"LIBRARY_PROBED","result":"failed: java.lang.Exception: Cannot load library","library":"C:\\Windows\\System32\\ykcs11.dll"}
+{"timestamp":"2026-08-13T11:53:49.116664Z","type":"LIBRARY_PROBED","result":"no_tokens","library":"C:\\Windows\\System32\\opensc-pkcs11.dll"}
+{"timestamp":"2026-08-13T11:53:49.150399700Z","type":"LIBRARY_PROBED","result":"success","library":"E:\\SoftHSM2\\lib\\softhsm2-x64.dll"}
+{"timestamp":"2026-08-13T11:53:49.151401600Z","type":"TOKEN_FOUND","label":"SoftHSMToken1","tokenId":"slot-249215396","serial":"09af31a70edab9a4"}
+{"timestamp":"2026-08-13T11:53:49.152400200Z","type":"TOKEN_FOUND","label":"","tokenId":"slot-1","serial":""}
+{"timestamp":"2026-08-13T11:53:49.153399600Z","type":"TOKEN_DISCOVERY_COMPLETED","tokensFound":"2"}
+{"timestamp":"2026-08-13T11:53:49.232417400Z","type":"SESSION_OPENED","sessionId":"c2a3e307fd7e46c28132c9f5297b73d8","tokenId":"slot-249215396"}
+{"timestamp":"2026-08-13T11:53:52.900162500Z","type":"AUTH_SUCCESS","path":"/v1/sessions/c2a3e307fd7e46c28132c9f5297b73d8/certificates","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T11:54:01.925841400Z","type":"AUTH_SUCCESS","path":"/v1/sessions/c2a3e307fd7e46c28132c9f5297b73d8/jobs","remoteAddress":"127.0.0.1"}
+{"timestamp":"2026-08-13T11:54:02.091010400Z","type":"DOCUMENT_SIGNED","alias":"rsaKey","result":"success","sessionId":"c2a3e307fd7e46c28132c9f5297b73d8","signatureSize":"1383","pdfSize":"25819"}

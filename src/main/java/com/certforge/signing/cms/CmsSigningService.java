@@ -1,5 +1,6 @@
 package com.certforge.signing.cms;
 
+import com.certforge.audit.AuditLogger;
 import com.certforge.signing.crypto.CryptoSigner;
 import com.certforge.signing.exception.PdfSigningException;
 import org.bouncycastle.cert.jcajce.JcaCertStore;
@@ -17,6 +18,11 @@ import java.util.logging.Logger;
 public class CmsSigningService {
 
     private static final Logger LOG = Logger.getLogger(CmsSigningService.class.getName());
+    private final AuditLogger auditLogger;
+
+    public CmsSigningService(AuditLogger auditLogger) {
+        this.auditLogger = auditLogger;
+    }
 
     public byte[] createDetachedSignature(byte[] content, CryptoSigner cryptoSigner)
             throws PdfSigningException {
@@ -52,6 +58,11 @@ public class CmsSigningService {
 
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "Failed to create CMS signature: " + e.getMessage(), e);
+
+            // Audit: CMS construction failed
+            auditLogger.logError("cms_signature_creation",
+                    "Failed to create CMS signature: " + e.getMessage());
+
             throw new PdfSigningException("Failed to create CMS signature", e);
         }
     }

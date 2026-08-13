@@ -1,5 +1,6 @@
 package com.certforge.signing.crypto;
 
+import com.certforge.audit.AuditLogger;
 import com.certforge.session.SessionManager;
 import com.certforge.signing.exception.SigningKeyNotFoundException;
 
@@ -19,9 +20,11 @@ public class SigningKeyProvider {
     private static final Logger LOG = Logger.getLogger(SigningKeyProvider.class.getName());
 
     private final SessionManager sessionManager;
+    private final AuditLogger auditLogger;
 
-    public SigningKeyProvider(SessionManager sessionManager) {
+    public SigningKeyProvider(SessionManager sessionManager, AuditLogger auditLogger) {
         this.sessionManager = sessionManager;
+        this.auditLogger = auditLogger;
     }
 
     /**
@@ -34,16 +37,19 @@ public class SigningKeyProvider {
             Provider provider = keyStore.getProvider();
 
             if (!keyStore.containsAlias(alias)) {
+                auditLogger.logError("signing_key_retrieval", "Alias not found on token: " + alias);
                 throw new SigningKeyNotFoundException("Alias not found on token: " + alias);
             }
 
             PrivateKey privateKey = (PrivateKey) keyStore.getKey(alias, null);
             if (privateKey == null) {
+                auditLogger.logError("signing_key_retrieval", "No private key for alias: " + alias);
                 throw new SigningKeyNotFoundException("No private key for alias: " + alias);
             }
 
             var certChain = keyStore.getCertificateChain(alias);
             if (certChain == null || certChain.length == 0) {
+                auditLogger.logError("signing_key_retrieval", "No certificate chain for alias: " + alias);
                 throw new SigningKeyNotFoundException("No certificate chain for alias: " + alias);
             }
 
@@ -57,6 +63,8 @@ public class SigningKeyProvider {
         } catch (SigningKeyNotFoundException e) {
             throw e;
         } catch (Exception e) {
+            auditLogger.logError("signing_key_retrieval",
+                    "Failed to retrieve signing key for alias " + alias + ": " + e.getMessage());
             throw new SigningKeyNotFoundException("Failed to retrieve signing key: " + e.getMessage());
         }
     }
@@ -69,6 +77,8 @@ public class SigningKeyProvider {
         try {
             return sessionManager.getKeyStore(sessionId).getProvider();
         } catch (Exception e) {
+            auditLogger.logError("signing_key_retrieval",
+                    "Failed to get provider for session " + sessionId + ": " + e.getMessage());
             throw new SigningKeyNotFoundException("Session not found: " + e.getMessage());
         }
     }

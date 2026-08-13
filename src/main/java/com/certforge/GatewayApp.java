@@ -1,5 +1,6 @@
 package com.certforge;
 
+import com.certforge.audit.AuditLogger;
 import com.certforge.auth.ConfigAuthenticator;
 import com.certforge.auth.Authenticator;
 import com.certforge.config.Config;
@@ -23,15 +24,42 @@ import java.util.logging.Logger;
 public class GatewayApp {
 
     private static final Logger LOG = Logger.getLogger(GatewayApp.class.getName());
+    private static final String VERSION = "0.1.0";
 
     private static String defaultConfigPath() {
         return System.getProperty("user.home") + "/.certforge/gateway.yml";
     }
 
     public static void main(String[] args) throws Exception {
-        LOG.info("Starting CertForge Gateway Application...");
+        // 1. Load config first (need audit path before logging starts)
+        Config config = loadConfig();
 
-        // 1. Determine config file path
+        // 2. Initialize audit logger
+        AuditLogger auditLogger = new AuditLogger(config.auditPath());
+        auditLogger.logStarted(VERSION);
+
+        // 3. Add shutdown hook (also audits shutdown)
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            auditLogger.logStopped();
+            LOG.info("Shutdown signal received. Stopping CertForge Gateway Application.");
+        }));
+
+        // 4. Authentication
+        Authenticator authenticator = new ConfigAuthenticator(config.apiKeys());
+        LOG.info("Authenticator initialized with " + config.apiKeys().size() + " API key(s)");
+
+        // 5. Port override via environment variable
+        int port = resolvePort(config);
+
+        // 6. Assemble gateway
+        RestServer server = getRestServer(authenticator, auditLogger);
+        server.start(port);
+
+        LOG.info("Ready. Press Ctrl+C to stop.");
+        Thread.currentThread().join();
+    }
+
+    private static Config loadConfig() {
         String configPathEnv = System.getenv("CERTFORGE_CONFIG");
         Path configPath;
         if (configPathEnv != null && !configPathEnv.isBlank()) {
@@ -42,58 +70,55 @@ public class GatewayApp {
             LOG.fine("Config path set to default location: " + configPath);
         }
 
-        // 2. Load configuration or use built-in defaults
-        Config config;
         if (Files.exists(configPath)) {
-            config = ConfigLoader.load(configPath);
-            LOG.info("Configuration loaded from " + configPath);
+            try {
+                Config config = ConfigLoader.load(configPath);
+                LOG.info("Configuration loaded from " + configPath);
+                return config;
+            } catch (Exception e) {
+                LOG.log(Level.WARNING, "Failed to parse config file " + configPath + ": " + e.getMessage(), e);
+                LOG.info("Using built-in defaults");
+                return new Config(8443, List.of(), 3600, 86400, Path.of("audit.log"), "info");
+            }
         } else {
-            config = new Config(8443, List.of(), 3600, 86400, Path.of("audit.log"), "info");
             LOG.info("No config file found at " + configPath + "; using built-in defaults.");
+            return new Config(8443, List.of(), 3600, 86400, Path.of("audit.log"), "info");
         }
+    }
 
-        // 3. Port override via environment variable
-        int port = config.getPort();
+    private static int resolvePort(Config config) {
+        int port = config.port();
         String portEnv = System.getenv("CERTFORGE_PORT");
         if (portEnv != null && !portEnv.isBlank()) {
             try {
                 port = Integer.parseInt(portEnv);
                 LOG.info("Port overridden via CERTFORGE_PORT environment variable to " + port);
             } catch (NumberFormatException e) {
-                LOG.log(Level.WARNING, "Invalid CERTFORGE_PORT environment variable value: " + portEnv + "; falling back to port " + port, e);
+                LOG.log(Level.WARNING, "Invalid CERTFORGE_PORT: " + portEnv + "; falling back to " + port, e);
             }
         }
-
-        // 4. Authentication
-        Authenticator authenticator = new ConfigAuthenticator(config.getApiKeys());
-        LOG.info("Authenticator initialized with " + config.getApiKeys().size() + " API key(s)");
-
-        // 5. Session management
-        RestServer server = getRestServer(authenticator);
-        server.start(port);
-
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            LOG.info("Shutdown signal received. Stopping CertForge Gateway Application.");
-        }));
-
-        LOG.info("Ready. Press Ctrl+C to stop.");
-        Thread.currentThread().join();
+        return port;
     }
 
-    private static RestServer getRestServer(Authenticator authenticator) {
-        SessionManager sessionManager = new SessionManager();
+    private static RestServer getRestServer(Authenticator authenticator, AuditLogger auditLogger) {
+        // Session management
+        SessionManager sessionManager = new SessionManager(auditLogger);
 
-        // 6. Assemble the gateway
-        TokenDiscoverer discoverer = new Pkcs11TokenDiscoverer(new DefaultLibraryPathProvider());
-
-        // 7. Signing service
-        SigningKeyProvider signingKeyProvider = new SigningKeyProvider(sessionManager);
-        CertificateChainValidator certValidator = new CertificateChainValidator();
-        CmsSigningService cmsSigningService = new CmsSigningService();
-        PdfSigningService pdfSigningService = new PdfSigningService(
-                signingKeyProvider, certValidator, cmsSigningService
+        // Token discovery
+        TokenDiscoverer discoverer = new Pkcs11TokenDiscoverer(
+                new DefaultLibraryPathProvider(), auditLogger
         );
 
-        return new RestServer(discoverer, authenticator, sessionManager, pdfSigningService);
+        // Signing service
+        SigningKeyProvider signingKeyProvider = new SigningKeyProvider(sessionManager, auditLogger);
+        CertificateChainValidator certValidator = new CertificateChainValidator(auditLogger);
+        CmsSigningService cmsSigningService = new CmsSigningService(auditLogger);
+        PdfSigningService pdfSigningService = new PdfSigningService(
+                signingKeyProvider, certValidator, cmsSigningService, auditLogger
+        );
+
+        return new RestServer(
+                discoverer, authenticator, sessionManager, pdfSigningService, auditLogger
+        );
     }
 }

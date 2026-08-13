@@ -1,5 +1,6 @@
 package com.certforge.signing;
 
+import com.certforge.audit.AuditLogger;
 import com.certforge.signing.certificate.CertificateChainValidator;
 import com.certforge.signing.cms.CmsSigningService;
 import com.certforge.signing.crypto.CryptoSigner;
@@ -30,13 +31,16 @@ public class PdfSigningService {
     private final SigningKeyProvider signingKeyProvider;
     private final CertificateChainValidator certificateValidator;
     private final CmsSigningService cmsSigningService;
+    private final AuditLogger auditLogger;
 
     public PdfSigningService(SigningKeyProvider signingKeyProvider,
                              CertificateChainValidator certificateValidator,
-                             CmsSigningService cmsSigningService) {
+                             CmsSigningService cmsSigningService,
+                             AuditLogger auditLogger) {
         this.signingKeyProvider = signingKeyProvider;
         this.certificateValidator = certificateValidator;
         this.cmsSigningService = cmsSigningService;
+        this.auditLogger = auditLogger;
     }
 
     public byte[] signPdf(String sessionId, String alias, byte[] pdfBytes)
@@ -46,17 +50,18 @@ public class PdfSigningService {
 
         // 1. Get signing key
         SigningKey signingKey = signingKeyProvider.getSigningKey(sessionId, alias);
-        X509Certificate[] chain = signingKey.getCertificateChain();
+        X509Certificate[] chain = signingKey.certificateChain();
 
         // 2. Validate certificate chain
         certificateValidator.validate(chain);
 
         // 3. Create crypto signer
         CryptoSigner cryptoSigner = new Pkcs11CryptoSigner(
-                signingKey.getPrivateKey(),
+                signingKey.privateKey(),
                 chain,
                 signingKeyProvider.getProvider(sessionId),
-                determineSignatureAlgorithm(chain[0])
+                determineSignatureAlgorithm(chain[0]),
+                auditLogger
         );
 
         // 4. Sign PDF using external signing flow
@@ -103,10 +108,26 @@ public class PdfSigningService {
             // Verify signature was embedded
             verifySignedPdf(signedPdf);
 
+            // Audit: document signed successfully
+            auditLogger.logDocumentSigned(
+                    sessionId, alias, "success", pdfBytes.length, cmsSignature.length
+            );
+
             return signedPdf;
 
+        } catch (PdfSigningException e) {
+            LOG.log(Level.SEVERE, "PDF signing failed for alias " + alias + ": " + e.getMessage(), e);
+
+            // Audit: signing failed
+            auditLogger.logSigningFailed(sessionId, alias, e.getMessage());
+
+            throw e;
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "PDF signing failed for alias " + alias + ": " + e.getMessage(), e);
+
+            // Audit: signing failed
+            auditLogger.logSigningFailed(sessionId, alias, e.getMessage());
+
             throw new PdfSigningException("Failed to sign PDF", e);
         }
     }

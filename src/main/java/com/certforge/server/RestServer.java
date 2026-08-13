@@ -1,5 +1,6 @@
 package com.certforge.server;
 
+import com.certforge.audit.AuditLogger;
 import com.certforge.auth.Authenticator;
 import com.certforge.discovery.TokenDiscoverer;
 import com.certforge.discovery.TokenInfo;
@@ -27,13 +28,16 @@ public class RestServer {
     private final Authenticator authenticator;
     private final SessionManager sessionManager;
     private final PdfSigningService pdfSigningService;
+    private final AuditLogger auditLogger;
 
     public RestServer(TokenDiscoverer discoverer, Authenticator authenticator,
-                      SessionManager sessionManager, PdfSigningService pdfSigningService) {
+                      SessionManager sessionManager, PdfSigningService pdfSigningService,
+                      AuditLogger auditLogger) {
         this.discoverer = discoverer;
         this.authenticator = authenticator;
         this.sessionManager = sessionManager;
         this.pdfSigningService = pdfSigningService;
+        this.auditLogger = auditLogger;
     }
 
     public int start(int port) throws IOException {
@@ -51,11 +55,22 @@ public class RestServer {
 
     private HttpHandler withAuth(HttpHandler handler) {
         return exchange -> {
+            String path = exchange.getRequestURI().getPath();
+            String remoteAddress = exchange.getRemoteAddress().getAddress().getHostAddress();
+
             if (!isAuthenticated(exchange)) {
-                LOG.warning("Unauthorized access attempt to " + exchange.getRequestURI());
+                LOG.warning("Unauthorized access attempt to " + path);
+
+                // Audit: auth failed
+                auditLogger.logAuthFailed(path, remoteAddress);
+
                 sendJson(exchange, 401, "{\"error\":\"unauthorized\",\"message\":\"Invalid or missing API key\"}");
                 return;
             }
+
+            // Audit: auth success (at FINE level - avoid log flooding)
+            auditLogger.logAuthSuccess(path, remoteAddress);
+
             handler.handle(exchange);
         };
     }
@@ -85,12 +100,12 @@ public class RestServer {
             TokenInfo t = tokens.get(i);
             if (i > 0) json.append(",");
             json.append("{")
-                    .append("\"id\":\"").append(escape(t.getId())).append("\",")
-                    .append("\"label\":\"").append(escape(t.getLabel())).append("\",")
-                    .append("\"manufacturer\":\"").append(escape(t.getManufacturer())).append("\",")
-                    .append("\"serial\":\"").append(escape(t.getSerial())).append("\",")
-                    .append("\"libraryPath\":\"").append(escape(t.getLibraryPath())).append("\",")
-                    .append("\"slotId\":").append(t.getSlotId())
+                    .append("\"id\":\"").append(escape(t.id())).append("\",")
+                    .append("\"label\":\"").append(escape(t.label())).append("\",")
+                    .append("\"manufacturer\":\"").append(escape(t.manufacturer())).append("\",")
+                    .append("\"serial\":\"").append(escape(t.serial())).append("\",")
+                    .append("\"libraryPath\":\"").append(escape(t.libraryPath())).append("\",")
+                    .append("\"slotId\":").append(t.slotId())
                     .append("}");
         }
         json.append("]}");
@@ -107,6 +122,7 @@ public class RestServer {
 
             if (tokenId == null || pin == null) {
                 LOG.warning("Invalid session creation payload: missing tokenId or pin");
+                auditLogger.logError("session_create", "Missing tokenId or pin");
                 sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"tokenId and pin are required\"}");
                 return;
             }
@@ -114,16 +130,18 @@ public class RestServer {
             TokenInfo token = findToken(tokenId);
             if (token == null) {
                 LOG.warning("Token not found during session creation: " + tokenId);
+                auditLogger.logError("session_create", "Token not found: " + tokenId);
                 sendJson(exchange, 404, "{\"error\":\"token_not_found\",\"message\":\"Token not found: " + escape(tokenId) + "\"}");
                 return;
             }
 
             try {
                 String sessionId = sessionManager.openSession(token, pin);
-                LOG.info("Session successfully opened: " + sessionId + " for token " + token.getId());
+                LOG.info("Session successfully opened: " + sessionId + " for token " + token.id());
                 sendJson(exchange, 200, "{\"sessionId\":\"" + sessionId + "\"}");
             } catch (Exception e) {
                 LOG.log(Level.WARNING, "Failed to open session for token " + tokenId + ": " + e.getMessage(), e);
+                auditLogger.logError("session_create", "Failed to open session: " + e.getMessage());
                 sendJson(exchange, 401, "{\"error\":\"session_open_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
             }
         } else {
@@ -142,6 +160,7 @@ public class RestServer {
 
         if (parts.length < 4) {
             LOG.warning("Invalid session path format: " + path);
+            auditLogger.logError("session_operation", "Invalid path: " + path);
             sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"Invalid session path\"}");
             return;
         }
@@ -172,14 +191,14 @@ public class RestServer {
                 CertificateInfo c = certs.get(i);
                 if (i > 0) json.append(",");
                 json.append("{")
-                        .append("\"alias\":\"").append(escape(c.getAlias())).append("\",")
-                        .append("\"subject\":\"").append(escape(c.getSubject())).append("\",")
-                        .append("\"issuer\":\"").append(escape(c.getIssuer())).append("\",")
-                        .append("\"serialNumber\":\"").append(escape(c.getSerialNumber())).append("\",")
-                        .append("\"notBefore\":\"").append(escape(c.getNotBefore())).append("\",")
-                        .append("\"notAfter\":\"").append(escape(c.getNotAfter())).append("\",")
-                        .append("\"keyType\":\"").append(escape(c.getKeyType())).append("\",")
-                        .append("\"keySize\":").append(c.getKeySize())
+                        .append("\"alias\":\"").append(escape(c.alias())).append("\",")
+                        .append("\"subject\":\"").append(escape(c.subject())).append("\",")
+                        .append("\"issuer\":\"").append(escape(c.issuer())).append("\",")
+                        .append("\"serialNumber\":\"").append(escape(c.serialNumber())).append("\",")
+                        .append("\"notBefore\":\"").append(escape(c.notBefore())).append("\",")
+                        .append("\"notAfter\":\"").append(escape(c.notAfter())).append("\",")
+                        .append("\"keyType\":\"").append(escape(c.keyType())).append("\",")
+                        .append("\"keySize\":").append(c.keySize())
                         .append("}");
             }
             json.append("]}");
@@ -199,6 +218,7 @@ public class RestServer {
             String alias = extractJsonValue(body, "alias");
 
             if (documentBase64 == null || alias == null) {
+                auditLogger.logError("sign_job", "Missing document or alias");
                 sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"document (base64) and alias are required\"}");
                 return;
             }
@@ -226,9 +246,11 @@ public class RestServer {
 
         } catch (IllegalArgumentException e) {
             LOG.warning("Invalid base64 document: " + e.getMessage());
+            auditLogger.logError("sign_job", "Invalid base64 document");
             sendJson(exchange, 400, "{\"error\":\"bad_request\",\"message\":\"Invalid base64 document data\"}");
         } catch (Exception e) {
             LOG.log(Level.WARNING, "PDF signing failed: " + e.getMessage(), e);
+            auditLogger.logError("sign_job", "Signing failed: " + e.getMessage());
             sendJson(exchange, 500, "{\"error\":\"signing_failed\",\"message\":\"" + escape(e.getMessage()) + "\"}");
         }
     }
@@ -236,7 +258,7 @@ public class RestServer {
     private TokenInfo findToken(String tokenId) {
         List<TokenInfo> tokens = discoverer.discover();
         for (TokenInfo token : tokens) {
-            if (token.getId().equals(tokenId)) {
+            if (token.id().equals(tokenId)) {
                 return token;
             }
         }

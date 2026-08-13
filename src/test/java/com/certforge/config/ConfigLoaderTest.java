@@ -25,12 +25,12 @@ class ConfigLoaderTest {
 
         Config config = ConfigLoader.load(file);
 
-        assertEquals(9443, config.getPort());
-        assertEquals(List.of("abc"), config.getApiKeys());
-        assertEquals(3600, config.getSessionInactivityTimeout());
-        assertEquals(86400, config.getSessionMaxLifetime());
-        assertEquals("audit.log", config.getAuditPath().toString());
-        assertEquals("info", config.getLoggingLevel());
+        assertEquals(9443, config.port());
+        assertEquals(List.of("abc"), config.apiKeys());
+        assertEquals(3600, config.sessionInactivityTimeout());
+        assertEquals(86400, config.sessionMaxLifetime());
+        assertEquals("audit.log", config.auditPath().toString());
+        assertEquals("info", config.loggingLevel());
     }
 
     @Test
@@ -50,7 +50,7 @@ class ConfigLoaderTest {
             default -> null;
         });
 
-        assertEquals(9999, config.getPort());
-        assertEquals(List.of("secret123"), config.getApiKeys());
+        assertEquals(9999, config.port());
+        assertEquals(List.of("secret123"), config.apiKeys());
     }
 }
