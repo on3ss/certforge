@@ -13,11 +13,13 @@ CertForge Gateway is a lightweight native service that runs on Windows, macOS, a
 - [Requirements](#requirements)
 - [Quick Start](#quick-start)
 - [API Reference](#api-reference)
+- [Visual Signatures & Positioning](#visual-signatures--positioning)
+- [Template System](#template-system)
+- [Client SDK (JS/TS)](#client-sdk-jsts)
 - [Configuration](#configuration)
 - [Token Support](#token-support)
 - [Security Model](#security-model)
-- [Development](#development)
-- [Testing](#testing)
+- [Development & Testing](#development--testing)
 - [License](#license)
 
 ---
@@ -26,20 +28,21 @@ CertForge Gateway is a lightweight native service that runs on Windows, macOS, a
 
 - **Zero-config token discovery** — scans known PKCS#11 library paths automatically
 - **Session management** — PIN-based sessions with inactivity and max lifetime expiry
-- **PDF signing** — PAdES Baseline B using token-backed private keys
+- **Cryptographic & Visual PDF signing** — PAdES Baseline B using token-backed private keys
+- **Flexible visual positioning** — absolute coordinates, page relative anchors (`top-left`, `top-right`, `bottom-left`, `bottom-right`, `center`), and document-wide text search (`appearanceSearchText`)
+- **Relative search placement** — position signature box `above`, `below`, `left`, `right`, or `over` matching search text
+- **Automatic cutoff prevention** — page boundary clamping keeps visual signatures inside visible margins
+- **Reusable appearance templates** — YAML-configured named templates with dynamic variable placeholders (`{signer}`, `{date}`, `{reason}`, `{location}`)
 - **Signature verification** — document integrity and certificate validation
 - **Append-only audit logging** — thread-safe JSON logs with daily rotation
 - **API key authentication** — Bearer token on all `/v1/*` endpoints
-- **No cloud dependency** — runs entirely locally on localhost
-- **Private keys never leave the token**
+- **Private keys never leave the token** — local localhost operation only
 
 ---
 
 ## Architecture
 
-
 ```
-
 ┌──────────────────────────────────────────┐
 │          Host Machine                    │
 │                                          │
@@ -57,7 +60,6 @@ CertForge Gateway is a lightweight native service that runs on Windows, macOS, a
 │                 USB Token        SoftHSM2│
 │                 (DigiCert)        (dev)  │
 └──────────────────────────────────────────┘
-
 ```
 
 ### Components
@@ -66,12 +68,13 @@ CertForge Gateway is a lightweight native service that runs on Windows, macOS, a
 |-----------|---------------|
 | `discovery` | JNA-based PKCS#11 library scanning and token detection |
 | `session` | SunPKCS11-based session management with PIN |
-| `signing` | PDF signing (PDFBox 3.x + BouncyCastle + PKCS#11) |
+| `signing` | Cryptographic CMS & PDFBox 3.x visual appearance stream generation |
+| `signing.appearance` | `SignatureAppearance`, `TemplateManager`, `AppearanceStreamBuilder`, text search finder |
 | `verify` | Signature verification (CMS + PDF byte range) |
 | `audit` | Append-only JSON audit logging |
 | `auth` | API key authentication |
 | `config` | YAML configuration loading |
-| `server` | JDK HttpServer REST API |
+| `server` | JDK HttpServer REST API & JSON serialization |
 
 ---
 
@@ -90,10 +93,9 @@ CertForge Gateway is a lightweight native service that runs on Windows, macOS, a
 
 ```bash
 ./gradlew build
-
 ```
 
-Produces: `build/libs/certforge-gateway.jar`
+Produces executable Fat JAR: `build/libs/certforge-gateway-0.1.0-all.jar`
 
 ### 2. Create Configuration
 
@@ -109,154 +111,152 @@ sessions:
   inactivityTimeout: 3600    # seconds
   maxLifetime: 86400         # seconds
 
+templatesDir: "~/.certforge/templates"
+
+templates:
+  standard:
+    type: "text"
+    positionType: "pagePosition"
+    pagePosition: "bottom-right"
+    width: 220
+    height: 45
+    fontSize: 9
+    padding: 6
+    textLines:
+      - "Digitally signed by {signer}"
+      - "Date: {date}"
+      - "Reason: {reason}"
+
 audit:
   path: "~/.certforge/audit.log"
 
 logging:
   level: "info"
-
 ```
 
 ### 3. Run
 
 ```bash
-java --enable-native-access=ALL-UNNAMED -jar build/libs/certforge-gateway.jar
-
-```
-
-### 4. Test
-
-```bash
-# Health check (no auth)
-curl [http://127.0.0.1:8443/health](http://127.0.0.1:8443/health)
-
-# List tokens (auth required)
-curl -H "Authorization: Bearer sk_your_api_key_here" \
-     [http://127.0.0.1:8443/v1/tokens](http://127.0.0.1:8443/v1/tokens)
-
+java --enable-native-access=ALL-UNNAMED -jar build/libs/certforge-gateway-0.1.0-all.jar
 ```
 
 ---
 
 ## API Reference
 
-### Base URL
+### Base URL & Auth
 
-```
-[http://127.0.0.1:8443/v1](http://127.0.0.1:8443/v1)
-
-```
-
-### Authentication Header
-
-```
-Authorization: Bearer <api-key>
-
-```
+- **Base URL**: `http://127.0.0.1:8443/v1`
+- **Auth Header**: `Authorization: Bearer <api-key>`
 
 ### Endpoints
 
 | Method | Endpoint | Description | Auth |
 | --- | --- | --- | --- |
 | GET | `/health` | Health check | No |
-| GET | `/v1/tokens` | List detected tokens | Yes |
+| GET | `/v1/tokens` | List detected USB/PKCS#11 tokens | Yes |
 | POST | `/v1/sessions` | Open session with PIN | Yes |
-| GET | `/v1/sessions/{id}/certificates` | List certificates | Yes |
-| POST | `/v1/sessions/{id}/jobs` | Sign PDF | Yes |
+| GET | `/v1/sessions/{id}/certificates` | List certificates in session | Yes |
+| POST | `/v1/sessions/{id}/jobs` | Sign PDF (invisible or visible appearance) | Yes |
 | DELETE | `/v1/sessions/{id}` | Close session | Yes |
 | POST | `/v1/verify` | Verify signed PDF | Yes |
 
-### Open Session
+---
 
-```json
-POST /v1/sessions
-{
-    "tokenId": "slot-249215396",
-    "pin": "1234"
-}
+## Visual Signatures & Positioning
 
-```
+CertForge Gateway supports rich visual signature widget appearances rendered directly onto target PDF pages.
 
-Response:
+### 1. Appearance Types (`appearanceType`)
+- **`none`** *(default)*: Invisible cryptographic signature.
+- **`text`**: Rendered multiline text (Helvetica font).
+- **`image`**: Base64-encoded PNG/JPEG signature badge or seal.
+- **`text_image`**: Side-by-side logo icon and metadata text.
 
-```json
-{
-    "sessionId": "a1b2c3d4e5f6..."
-}
+### 2. Positioning Modes
 
-```
+#### A. Document-Wide Text Search (`appearanceSearchText` & `appearanceSearchPosition`)
+Scans all document pages for a target string (e.g. `"Treasury Officer"`), detects the exact page and coordinates, and places the signature box relative to the text:
+- **`appearanceSearchPosition`**:
+  - **`"above"`** *(default)*: Positioned directly above the search text.
+  - **`"below"`**: Positioned directly below the search text.
+  - **`"left"`**: Positioned directly to the left of the search text.
+  - **`"right"`**: Positioned directly to the right of the search text.
+  - **`"over"`**: Overlay on top of search text.
 
-### Sign PDF
+#### B. Page Relative Anchors (`appearancePosition`)
+Anchors the signature box relative to target page bounds (`0.5 in` default margin):
+- `"top-left"`, `"top-right"`, `"bottom-left"`, `"bottom-right"`, `"center"`
 
-Invisible signature (default):
+#### C. Absolute Coordinates (`appearanceX`, `appearanceY`, `appearanceWidth`, `appearanceHeight`)
+Exact lower-left origin coordinates in PDF points on target `appearancePage` (0-based).
 
-```json
-POST /v1/sessions/{sessionId}/jobs
-{
-    "document": "<base64-encoded-pdf>",
-    "alias": "myKey"
-}
-```
+### 3. Padding & Edge Clamping (`appearancePadding`)
+- **Inner Padding**: Inset padding (default `6pt`) for text lines and images inside the signature box.
+- **Edge Clamping**: Automatic page boundary clamping ($15\text{pt}$ margin) ensures signature widgets are never cut off at page margins.
 
-Visible signature with template & appearance overrides:
+---
 
-```json
-POST /v1/sessions/{sessionId}/jobs
-{
-    "document": "<base64-encoded-pdf>",
-    "alias": "myKey",
+## Template System
+
+Pre-configure appearance templates in `gateway.yml` under the `templates:` section.
+
+### Dynamic Placeholders
+- `{signer}` — Alias / Certificate Common Name
+- `{date}` — System ISO-8601 signing timestamp
+- `{reason}` — Signing reason string
+- `{location}` — Signing location string
+
+### Example Template Sign Job
+```bash
+curl -X POST http://127.0.0.1:8443/v1/sessions/<SESSION_ID>/jobs \
+  -H "Authorization: Bearer sk_your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "document": "<BASE64_PDF>",
+    "alias": "rsaKey",
     "template": "standard",
-    "appearance": {
-        "type": "text",
-        "page": 0,
-        "positionType": "pagePosition",
-        "pagePosition": "bottom-right",
-        "rectangle": { "x": 50, "y": 50, "width": 200, "height": 50 },
-        "reason": "Approved electronically",
-        "location": "Headquarters"
+    "appearanceSearchText": "Treasury Officer",
+    "appearanceSearchPosition": "above",
+    "reason": "Executive Document Approval"
+  }'
+```
+
+---
+
+## Client SDK (JS/TS)
+
+A client library is provided in [`sdk/certforge-sdk.js`](file:///e:/projects/certforge/sdk/certforge-sdk.js) and TypeScript types in [`sdk/certforge-sdk.d.ts`](file:///e:/projects/certforge/sdk/certforge-sdk.d.ts).
+
+### JavaScript Example
+```javascript
+const { CertForgeClient } = require('./sdk/certforge-sdk');
+
+const client = new CertForgeClient('http://127.0.0.1:8443', 'sk_your_api_key_here');
+
+async function run() {
+  // 1. Open PIN session
+  const tokens = await client.listTokens();
+  const session = await client.openSession(tokens.tokens[0].id, '1234');
+
+  // 2. Sign PDF with visible appearance relative to text
+  const response = await client.signPdf(session.sessionId, 'rsaKey', pdfBase64, {
+    template: 'standard',
+    appearance: {
+      type: 'text_image',
+      searchText: 'Treasury Officer',
+      searchPosition: 'above',
+      padding: 6,
+      textLines: ['Approved electronically', 'Date: {date}'],
+      imageBase64: '<BASE64_IMAGE>'
     }
+  });
+
+  console.log('Signed PDF ready:', response.document.filename);
+
+  // 3. Close Session
+  await client.closeSession(session.sessionId);
 }
-```
-
-Response:
-
-```json
-{
-    "jobId": "job_abc123",
-    "status": "completed",
-    "document": {
-        "data": "<base64-encoded-signed-pdf>",
-        "filename": "signed-document.pdf"
-    }
-}
-```
-
-### Verify PDF
-
-```json
-POST /v1/verify
-{
-    "document": "<base64-encoded-signed-pdf>"
-}
-
-```
-
-Response:
-
-```json
-{
-    "valid": true,
-    "signatures": [
-        {
-            "signer": "CN=My Key, O=Acme Corp",
-            "signedAt": "2026-08-13T15:30:15Z",
-            "integrity": "intact",
-            "certificateValid": true,
-            "certificateExpiry": "2027-08-13T00:00:00Z"
-        }
-    ]
-}
-
 ```
 
 ---
@@ -281,31 +281,20 @@ Override with: `CERTFORGE_CONFIG=/path/to/gateway.yml`
 | `CERTFORGE_PORT` | Override gateway port |
 | `CERTFORGE_LIBRARIES` | Extra PKCS#11 library paths (comma-separated) |
 
-### YAML Interpolation
-
-Config values support `${VARIABLE_NAME}` syntax:
-
-```yaml
-gateway:
-  apiKeys:
-    - "${API_KEY_FROM_ENV}"
-
-```
-
 ---
 
 ## Token Support
 
-Any PKCS#11-compatible token:
+Supports any PKCS#11-compatible hardware or software token:
 
 | Token | Detection |
 | --- | --- |
-| SoftHSM2 | Auto-detected at standard install paths |
-| DigiCert USB | Auto-detected if driver installed |
-| YubiKey (PIV) | Auto-detected if driver installed |
-| SafeNet eToken | Auto-detected if driver installed |
-| OpenSC smart cards | Auto-detected if driver installed |
-| Custom/network HSM | Add path via `CERTFORGE_LIBRARIES` env var |
+| SoftHSM2 | Auto-detected at standard installation paths |
+| DigiCert USB | Auto-detected if PKCS#11 driver installed |
+| YubiKey (PIV) | Auto-detected via OpenSC or YubiKey PKCS#11 |
+| SafeNet eToken | Auto-detected via SafeNet client driver |
+| OpenSC smart cards | Auto-detected via OpenSC library |
+| Custom / Network HSM | Add custom path via `CERTFORGE_LIBRARIES` env var |
 
 ---
 
@@ -313,133 +302,32 @@ Any PKCS#11-compatible token:
 
 | Concern | Approach |
 | --- | --- |
-| Private keys | Never leave the token |
-| PINs | Held in memory only during session lifetime. Zeroed on close. |
+| Private keys | **Never leave the hardware token** |
+| PINs | Held in memory during active session lifetime. Zeroed on close. |
 | API access | Bearer API key per request |
-| Network | Binds to `127.0.0.1` only by default |
+| Network | Binds to `127.0.0.1` by default |
 | Audit | Append-only JSON log with daily rotation |
-| Session expiry | Inactivity timeout + max lifetime |
-| Certificate validation | Validity period + key usage + algorithm |
+| Session expiry | Inactivity timeout + max lifetime enforcement |
 
 ---
 
-## Development
+## Development & Testing
 
-### Build
-
-```bash
-./gradlew build
-
-```
-
-### Run Tests
+### Build & Run Tests
 
 ```bash
-./gradlew test
-
-```
-
-### Clean Build
-
-```bash
-./gradlew clean build
-
-```
-
-### Project Structure
-
-```
-src/
-├── main/java/com/certforge/
-│   ├── GatewayApp.java              (entry point)
-│   ├── auth/                        (API key authentication)
-│   ├── audit/                       (JSON audit logging)
-│   ├── config/                      (YAML config loading)
-│   ├── discovery/                   (JNA token discovery)
-│   ├── server/                      (REST API server)
-│   ├── session/                     (PKCS#11 session management)
-│   ├── signing/                     (PDF signing)
-│   │   ├── certificate/             (chain validation)
-│   │   ├── cms/                     (CMS signature construction)
-│   │   ├── crypto/                  (key retrieval + PKCS#11 signer)
-│   │   └── exception/               (domain exceptions)
-│   └── verify/                      (signature verification)
-└── test/java/com/certforge/
-    ├── config/
-    ├── server/
-    ├── session/
-    ├── signing/
-    └── verify/
-
-```
-
-### Dependencies
-
-| Dependency | Purpose | License |
-| --- | --- | --- |
-| JNA | PKCS#11 library discovery | Apache 2.0 |
-| SnakeYAML | Configuration parsing | Apache 2.0 |
-| PDFBox 3.x | PDF signing | Apache 2.0 |
-| BouncyCastle | CMS/PAdES | MIT |
-| JUnit 5 | Testing | EPL 2.0 |
-
----
-
-## Testing
-
-### Unit Tests
-
-```bash
-./gradlew test
-
+./gradlew test build
 ```
 
 Tests cover:
-
-* Config loading and interpolation
-* Session management (expiry, close, nonexistent)
-* PDF signing service construction and error handling
-* PDF verification service (no signatures, corrupted PDF)
-* REST API (auth, health, verification)
-
-### Integration Tests (requires SoftHSM2)
-
-1. Install SoftHSM2
-2. Initialize a token:
-```bash
-softhsm2-util --init-token --slot 0 --label "TestToken" --pin 1234 --so-pin 5678
-
-```
-
-
-3. Run tests — PKCS#11 tests will execute when SoftHSM2 is available
-
----
-
-## Audit Log
-
-Audit events are written as single-line JSON to the configured path with daily rotation:
-
-```json
-{"timestamp":"2026-08-13T15:30:00Z","type":"GATEWAY_STARTED","version":"0.1.0"}
-{"timestamp":"2026-08-13T15:30:01Z","type":"TOKEN_DISCOVERY_STARTED","libraries":"6"}
-{"timestamp":"2026-08-13T15:30:02Z","type":"TOKEN_FOUND","tokenId":"slot-249215396","label":"SoftHSMToken1","serial":"09af31a70edab9a4"}
-{"timestamp":"2026-08-13T15:30:05Z","type":"SESSION_OPENED","sessionId":"abc123","tokenId":"slot-249215396"}
-{"timestamp":"2026-08-13T15:30:15Z","type":"DOCUMENT_SIGNED","sessionId":"abc123","alias":"myKey","result":"success","pdfSize":"591620","signatureSize":"8421"}
-{"timestamp":"2026-08-13T15:30:20Z","type":"SESSION_CLOSED","sessionId":"abc123","tokenId":"slot-249215396"}
-
-```
+- JNA discovery and YAML configuration parsing
+- Session pool & lifecycle management
+- PDFBox 3.x visual appearance stream generation & template placeholder substitution
+- Text position finder, multi-page document search, search position offset (`above`/`below`/`left`/`right`/`over`), and boundary clamping
+- End-to-end PDF digital signing and verification
 
 ---
 
 ## License
 
 Apache 2.0 for the gateway core. Proprietary for installers and support.
-
----
-
-## One-Liner
-
-**CertForge Gateway — plug in your USB token. It auto-detects. Your application signs PDFs via REST API. No cloud. No config. No compromise.**
-
-```
