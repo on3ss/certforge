@@ -19,11 +19,11 @@ public class Pkcs11Probe {
         try {
             return future.get(timeoutSeconds, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            LOG.fine("Probe timed out for " + libPath);
+            LOG.fine(() -> "Probe timed out for " + libPath);
             future.cancel(true);
             throw new Exception("Probe timed out for " + libPath);
         } catch (Exception e) {
-            LOG.fine("Probe failed for " + libPath + ": " + e.getMessage());
+            LOG.fine(() -> "Probe failed for " + libPath + ": " + e.getMessage());
             throw e;
         } finally {
             executor.shutdownNow();
@@ -31,23 +31,24 @@ public class Pkcs11Probe {
     }
 
     private static List<TokenInfo> doProbe(String libPath) throws Exception {
-        LOG.fine("Trying library: " + libPath);
+        LOG.fine(() -> "Trying library: " + libPath);
         List<TokenInfo> result = new ArrayList<>();
 
         Pkcs11Library lib;
         try {
             lib = Native.load(libPath, Pkcs11Library.class);
         } catch (UnsatisfiedLinkError e) {
-            LOG.fine("Failed to load library: " + e.getMessage());
+            LOG.fine(() -> "Failed to load library: " + e.getMessage());
             throw new Exception("Cannot load library", e);
         }
 
         Pkcs11Library.CK_C_INITIALIZE_ARGS args = new Pkcs11Library.CK_C_INITIALIZE_ARGS();
         args.flags = Pkcs11Library.CKF_OS_LOCKING_OK;
         Pkcs11Library.CK_RV rv = lib.C_Initialize(args);
-        if (rv.longValue() != Pkcs11Library.CKR_OK) {
-            LOG.fine("C_Initialize failed: 0x" + Long.toHexString(rv.longValue()));
-            throw new Exception("C_Initialize failed: 0x" + Long.toHexString(rv.longValue()));
+        final long initRv = rv.longValue();
+        if (initRv != Pkcs11Library.CKR_OK) {
+            LOG.fine(() -> "C_Initialize failed: 0x" + Long.toHexString(initRv));
+            throw new Exception("C_Initialize failed: 0x" + Long.toHexString(initRv));
         }
         LOG.fine("C_Initialize OK");
 
@@ -60,7 +61,7 @@ public class Pkcs11Probe {
             }
 
             long slotCount = countRef.getValue().longValue();
-            LOG.fine("Slots with token present: " + slotCount);
+            LOG.fine(() -> "Slots with token present: " + slotCount);
             if (slotCount == 0) {
                 return result;
             }
@@ -74,12 +75,12 @@ public class Pkcs11Probe {
 
             for (NativeLong slot : slots) {
                 long slotId = slot.longValue();
-                LOG.fine("Examining slot: " + slotId);
+                LOG.fine(() -> "Examining slot: " + slotId);
 
                 Pkcs11Library.CK_TOKEN_INFO info = new Pkcs11Library.CK_TOKEN_INFO();
                 rv = lib.C_GetTokenInfo(slotId, info);
                 if (rv.longValue() != Pkcs11Library.CKR_OK) {
-                    LOG.fine("Slot " + slotId + " token info error");
+                    LOG.fine(() -> "Slot " + slotId + " token info error");
                     continue;
                 }
                 info.read();
@@ -88,7 +89,7 @@ public class Pkcs11Probe {
                 String manufacturer = info.getManufacturer();
                 String serial = info.getSerial();
 
-                LOG.fine("Found token: " + label + " (slot " + slotId + ")");
+                LOG.fine(() -> "Found token: " + label + " (slot " + slotId + ")");
 
                 result.add(new TokenInfo(
                     "slot-" + slotId,

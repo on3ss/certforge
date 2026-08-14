@@ -19,10 +19,11 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class PdfVerificationService {
+public class PdfVerificationService implements VerificationService {
 
     private static final Logger LOG = Logger.getLogger(PdfVerificationService.class.getName());
     private final AuditLogger auditLogger;
@@ -36,9 +37,10 @@ public class PdfVerificationService {
     }
 
     public PdfVerificationService(AuditLogger auditLogger) {
-        this.auditLogger = auditLogger;
+        this.auditLogger = Objects.requireNonNull(auditLogger, "auditLogger cannot be null");
     }
 
+    @Override
     public VerificationResult verify(byte[] pdfBytes) {
         List<VerificationResult.SignatureVerification> signatures = new ArrayList<>();
         boolean overallValid = true;
@@ -135,7 +137,7 @@ public class PdfVerificationService {
             );
 
         } catch (Exception e) {
-            LOG.fine("Failed to verify individual signature: " + e.getMessage());
+            LOG.fine(() -> "Failed to verify individual signature: " + e.getMessage());
             return new VerificationResult.SignatureVerification(
                     "Unknown", "Unknown", "error: " + e.getMessage(), false, "Unknown"
             );
@@ -160,7 +162,7 @@ public class PdfVerificationService {
             return result;
 
         } catch (Exception e) {
-            LOG.fine("Failed to extract signed content: " + e.getMessage());
+            LOG.fine(() -> "Failed to extract signed content: " + e.getMessage());
             return null;
         }
     }
@@ -180,7 +182,7 @@ public class PdfVerificationService {
                     new ByteArrayInputStream(certHolder.getEncoded())
             );
         } catch (Exception e) {
-            LOG.fine("Failed to extract certificate: " + e.getMessage());
+            LOG.fine(() -> "Failed to extract certificate: " + e.getMessage());
             return null;
         }
     }

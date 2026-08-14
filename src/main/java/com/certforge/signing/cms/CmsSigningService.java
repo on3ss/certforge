@@ -12,6 +12,7 @@ import org.bouncycastle.cms.jcajce.JcaSignerInfoGeneratorBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,7 +22,7 @@ public class CmsSigningService {
     private final AuditLogger auditLogger;
 
     public CmsSigningService(AuditLogger auditLogger) {
-        this.auditLogger = auditLogger;
+        this.auditLogger = Objects.requireNonNull(auditLogger, "auditLogger cannot be null");
     }
 
     public byte[] createDetachedSignature(byte[] content, CryptoSigner cryptoSigner)

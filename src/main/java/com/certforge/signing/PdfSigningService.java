@@ -21,10 +21,11 @@ import java.io.InputStream;
 import java.security.cert.X509Certificate;
 import java.util.Calendar;
 import java.util.List;
+import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class PdfSigningService {
+public class PdfSigningService implements SigningService {
 
     private static final Logger LOG = Logger.getLogger(PdfSigningService.class.getName());
 
@@ -37,12 +38,13 @@ public class PdfSigningService {
                              CertificateChainValidator certificateValidator,
                              CmsSigningService cmsSigningService,
                              AuditLogger auditLogger) {
-        this.signingKeyProvider = signingKeyProvider;
-        this.certificateValidator = certificateValidator;
-        this.cmsSigningService = cmsSigningService;
-        this.auditLogger = auditLogger;
+        this.signingKeyProvider = Objects.requireNonNull(signingKeyProvider, "signingKeyProvider cannot be null");
+        this.certificateValidator = Objects.requireNonNull(certificateValidator, "certificateValidator cannot be null");
+        this.cmsSigningService = Objects.requireNonNull(cmsSigningService, "cmsSigningService cannot be null");
+        this.auditLogger = Objects.requireNonNull(auditLogger, "auditLogger cannot be null");
     }
 
+    @Override
     public byte[] signPdf(String sessionId, String alias, byte[] pdfBytes)
             throws PdfSigningException, SigningKeyNotFoundException, InvalidCertificateException {
         LOG.info("Starting PDF signing with alias: " + alias);

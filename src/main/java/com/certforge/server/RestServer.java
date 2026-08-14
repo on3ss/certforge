@@ -6,8 +6,8 @@ import com.certforge.discovery.TokenDiscoverer;
 import com.certforge.discovery.TokenInfo;
 import com.certforge.session.CertificateInfo;
 import com.certforge.session.SessionManager;
-import com.certforge.signing.PdfSigningService;
-import com.certforge.verify.PdfVerificationService;
+import com.certforge.signing.SigningService;
+import com.certforge.verify.VerificationService;
 import com.certforge.verify.VerificationResult;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -17,9 +17,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -30,19 +30,19 @@ public class RestServer {
     private final TokenDiscoverer discoverer;
     private final Authenticator authenticator;
     private final SessionManager sessionManager;
-    private final PdfSigningService pdfSigningService;
+    private final SigningService signingService;
     private final AuditLogger auditLogger;
-    private final PdfVerificationService pdfVerificationService;
+    private final VerificationService verificationService;
 
     public RestServer(TokenDiscoverer discoverer, Authenticator authenticator,
-                      SessionManager sessionManager, PdfSigningService pdfSigningService,
-                      AuditLogger auditLogger, PdfVerificationService pdfVerificationService) {
-        this.discoverer = discoverer;
-        this.authenticator = authenticator;
-        this.sessionManager = sessionManager;
-        this.pdfSigningService = pdfSigningService;
-        this.auditLogger = auditLogger;
-        this.pdfVerificationService = pdfVerificationService;
+                      SessionManager sessionManager, SigningService signingService,
+                      AuditLogger auditLogger, VerificationService verificationService) {
+        this.discoverer = Objects.requireNonNull(discoverer, "discoverer cannot be null");
+        this.authenticator = Objects.requireNonNull(authenticator, "authenticator cannot be null");
+        this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager cannot be null");
+        this.signingService = Objects.requireNonNull(signingService, "signingService cannot be null");
+        this.auditLogger = Objects.requireNonNull(auditLogger, "auditLogger cannot be null");
+        this.verificationService = Objects.requireNonNull(verificationService, "verificationService cannot be null");
     }
 
     public int start(int port) throws IOException {
@@ -96,28 +96,14 @@ public class RestServer {
         }
         LOG.fine("Processing GET /v1/tokens request");
         List<TokenInfo> tokens = discoverer.discover();
-        StringBuilder json = new StringBuilder("{\"tokens\":[");
-        for (int i = 0; i < tokens.size(); i++) {
-            TokenInfo t = tokens.get(i);
-            if (i > 0) json.append(",");
-            json.append("{")
-                    .append("\"id\":\"").append(escape(t.id())).append("\",")
-                    .append("\"label\":\"").append(escape(t.label())).append("\",")
-                    .append("\"manufacturer\":\"").append(escape(t.manufacturer())).append("\",")
-                    .append("\"serial\":\"").append(escape(t.serial())).append("\",")
-                    .append("\"libraryPath\":\"").append(escape(t.libraryPath())).append("\",")
-                    .append("\"slotId\":").append(t.slotId())
-                    .append("}");
-        }
-        json.append("]}");
-        sendJson(exchange, 200, json.toString());
+        sendJson(exchange, 200, JsonUtils.buildTokensJson(tokens));
     }
 
     private void handleSessions(HttpExchange exchange) throws IOException {
         if ("POST".equals(exchange.getRequestMethod())) {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            String tokenId = extractJsonValue(body, "tokenId");
-            String pin = extractJsonValue(body, "pin");
+            String tokenId = JsonUtils.extractJsonValue(body, "tokenId");
+            String pin = JsonUtils.extractJsonValue(body, "pin");
 
             LOG.fine(() -> "Processing POST /v1/sessions for tokenId=" + tokenId);
 
@@ -154,11 +140,6 @@ public class RestServer {
         String path = exchange.getRequestURI().getPath();
         String[] parts = path.split("/");
 
-        // Path formats:
-        // /v1/sessions/{sessionId}
-        // /v1/sessions/{sessionId}/certificates
-        // /v1/sessions/{sessionId}/jobs
-
         if (parts.length < 4) {
             LOG.warning("Invalid session path format: " + path);
             auditLogger.logError("session_operation", "Invalid path: " + path);
@@ -187,23 +168,7 @@ public class RestServer {
         LOG.fine(() -> "Listing certificates for session ID " + sessionId);
         try {
             List<CertificateInfo> certs = sessionManager.listCertificates(sessionId);
-            StringBuilder json = new StringBuilder("{\"certificates\":[");
-            for (int i = 0; i < certs.size(); i++) {
-                CertificateInfo c = certs.get(i);
-                if (i > 0) json.append(",");
-                json.append("{")
-                        .append("\"alias\":\"").append(escape(c.alias())).append("\",")
-                        .append("\"subject\":\"").append(escape(c.subject())).append("\",")
-                        .append("\"issuer\":\"").append(escape(c.issuer())).append("\",")
-                        .append("\"serialNumber\":\"").append(escape(c.serialNumber())).append("\",")
-                        .append("\"notBefore\":\"").append(escape(c.notBefore())).append("\",")
-                        .append("\"notAfter\":\"").append(escape(c.notAfter())).append("\",")
-                        .append("\"keyType\":\"").append(escape(c.keyType())).append("\",")
-                        .append("\"keySize\":").append(c.keySize())
-                        .append("}");
-            }
-            json.append("]}");
-            sendJson(exchange, 200, json.toString());
+            sendJson(exchange, 200, JsonUtils.buildCertificatesJson(certs));
         } catch (Exception e) {
             LOG.warning("Failed to list certificates for session " + sessionId + ": " + e.getMessage());
             sendError(exchange, 404, "session_not_found", e.getMessage());
@@ -214,8 +179,8 @@ public class RestServer {
         LOG.fine(() -> "Processing sign job for session ID " + sessionId);
         try {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            String documentBase64 = extractJsonValue(body, "document");
-            String alias = extractJsonValue(body, "alias");
+            String documentBase64 = JsonUtils.extractJsonValue(body, "document");
+            String alias = JsonUtils.extractJsonValue(body, "alias");
 
             if (documentBase64 == null || alias == null) {
                 auditLogger.logError("sign_job", "Missing document or alias");
@@ -226,7 +191,7 @@ public class RestServer {
             byte[] pdfBytes = Base64.getDecoder().decode(documentBase64);
             LOG.info("Signing PDF (" + pdfBytes.length + " bytes) with alias '" + alias + "'");
 
-            byte[] signedPdf = pdfSigningService.signPdf(sessionId, alias, pdfBytes);
+            byte[] signedPdf = signingService.signPdf(sessionId, alias, pdfBytes);
             String signedBase64 = Base64.getEncoder().encodeToString(signedPdf);
             String jobId = "job_" + UUID.randomUUID().toString().replace("-", "");
 
@@ -259,7 +224,7 @@ public class RestServer {
 
         try {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            String documentBase64 = extractJsonValue(body, "document");
+            String documentBase64 = JsonUtils.extractJsonValue(body, "document");
 
             if (documentBase64 == null) {
                 sendError(exchange, 400, "bad_request", "document (base64) is required");
@@ -269,7 +234,7 @@ public class RestServer {
             byte[] pdfBytes = Base64.getDecoder().decode(documentBase64);
             LOG.info("Verifying PDF (" + pdfBytes.length + " bytes)");
 
-            VerificationResult result = pdfVerificationService.verify(pdfBytes);
+            VerificationResult result = verificationService.verify(pdfBytes);
             sendJson(exchange, 200, result.toJson());
 
         } catch (IllegalArgumentException e) {
@@ -290,68 +255,8 @@ public class RestServer {
         return null;
     }
 
-    private String extractJsonValue(String json, String key) {
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return null;
-
-        int colonIndex = json.indexOf(":", keyIndex + searchKey.length());
-        if (colonIndex < 0) return null;
-
-        int valueStart = colonIndex + 1;
-        while (valueStart < json.length() && Character.isWhitespace(json.charAt(valueStart))) {
-            valueStart++;
-        }
-
-        if (valueStart < json.length() && json.charAt(valueStart) == '"') {
-            StringBuilder value = new StringBuilder();
-            for (int i = valueStart + 1; i < json.length(); i++) {
-                char c = json.charAt(i);
-                if (c == '\\' && i + 1 < json.length()) {
-                    value.append(json.charAt(i + 1));
-                    i++;
-                } else if (c == '"') {
-                    return value.toString();
-                } else {
-                    value.append(c);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private String escape(String s) {
-        if (s == null) return "";
-        StringBuilder sb = new StringBuilder();
-        for (char c : s.toCharArray()) {
-            switch (c) {
-                case '\\' -> sb.append("\\\\");
-                case '"' -> sb.append("\\\"");
-                case '\n' -> sb.append("\\n");
-                case '\r' -> sb.append("\\r");
-                case '\t' -> sb.append("\\t");
-                default -> {
-                    if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
-                    }
-                }
-            }
-        }
-        return sb.toString();
-    }
-
     private void sendError(HttpExchange exchange, int statusCode, String errorCode, String message) throws IOException {
-        String timestamp = Instant.now().toString();
-        String json = "{"
-                + "\"error\":\"" + escape(errorCode) + "\","
-                + "\"message\":\"" + escape(message) + "\","
-                + "\"status\":" + statusCode + ","
-                + "\"timestamp\":\"" + timestamp + "\""
-                + "}";
-        sendJson(exchange, statusCode, json);
+        sendJson(exchange, statusCode, JsonUtils.buildErrorJson(statusCode, errorCode, message));
     }
 
     private void sendJson(HttpExchange exchange, int code, String body) throws IOException {

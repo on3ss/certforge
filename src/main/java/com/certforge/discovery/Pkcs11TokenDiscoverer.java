@@ -4,6 +4,7 @@ import com.certforge.audit.AuditLogger;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.logging.Logger;
 
 /**
@@ -18,8 +19,8 @@ public class Pkcs11TokenDiscoverer implements TokenDiscoverer {
     private final AuditLogger auditLogger;
 
     public Pkcs11TokenDiscoverer(LibraryPathProvider pathProvider, AuditLogger auditLogger) {
-        this.pathProvider = pathProvider;
-        this.auditLogger = auditLogger;
+        this.pathProvider = Objects.requireNonNull(pathProvider, "pathProvider cannot be null");
+        this.auditLogger = Objects.requireNonNull(auditLogger, "auditLogger cannot be null");
     }
 
     @Override
@@ -45,7 +46,7 @@ public class Pkcs11TokenDiscoverer implements TokenDiscoverer {
                 }
                 allTokens.addAll(tokens);
             } catch (Exception e) {
-                LOG.fine("Skipping " + libPath + ": " + e.getMessage());
+                LOG.fine(() -> "Skipping " + libPath + ": " + e.getMessage());
                 auditLogger.logLibraryProbed(libPath, "failed: " + e.getMessage());
             }
         }

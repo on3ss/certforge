@@ -9,6 +9,7 @@ import java.security.PrivateKey;
 import java.security.Provider;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.logging.Logger;
 
 /**
@@ -23,8 +24,8 @@ public class SigningKeyProvider {
     private final AuditLogger auditLogger;
 
     public SigningKeyProvider(SessionManager sessionManager, AuditLogger auditLogger) {
-        this.sessionManager = sessionManager;
-        this.auditLogger = auditLogger;
+        this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager cannot be null");
+        this.auditLogger = Objects.requireNonNull(auditLogger, "auditLogger cannot be null");
     }
 
     /**
@@ -57,7 +58,7 @@ public class SigningKeyProvider {
                     .map(cert -> (X509Certificate) cert)
                     .toArray(X509Certificate[]::new);
 
-            LOG.fine("Signing key retrieved for alias: " + alias);
+            LOG.fine(() -> "Signing key retrieved for alias: " + alias);
             return new SigningKey(privateKey, chain);
 
         } catch (SigningKeyNotFoundException e) {

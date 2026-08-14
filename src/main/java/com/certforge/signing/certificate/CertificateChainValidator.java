@@ -4,6 +4,7 @@ import com.certforge.audit.AuditLogger;
 import com.certforge.signing.exception.InvalidCertificateException;
 
 import java.security.cert.X509Certificate;
+import java.util.Objects;
 import java.util.logging.Logger;
 
 /**
@@ -15,7 +16,7 @@ public class CertificateChainValidator {
     private final AuditLogger auditLogger;
 
     public CertificateChainValidator(AuditLogger auditLogger) {
-        this.auditLogger = auditLogger;
+        this.auditLogger = Objects.requireNonNull(auditLogger, "auditLogger cannot be null");
     }
 
     public void validate(X509Certificate[] chain) throws InvalidCertificateException {

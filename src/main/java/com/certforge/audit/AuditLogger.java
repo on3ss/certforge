@@ -8,6 +8,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -21,7 +22,7 @@ public class AuditLogger {
     private String currentDate;
 
     public AuditLogger(Path auditPath) {
-        this.baseAuditPath = auditPath;
+        this.baseAuditPath = Objects.requireNonNull(auditPath, "auditPath cannot be null");
         this.currentDate = LocalDate.now().format(DateTimeFormatter.ISO_DATE);
         LOG.info("Audit logger initialized. Writing to: " + auditPath);
     }

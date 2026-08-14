@@ -3,12 +3,15 @@ package com.certforge.auth;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
+import java.util.Objects;
 
 public class ConfigAuthenticator implements Authenticator {
     private final List<byte[]> validKeyBytes;
 
     public ConfigAuthenticator(List<String> validKeys) {
+        Objects.requireNonNull(validKeys, "validKeys cannot be null");
         this.validKeyBytes = validKeys.stream()
+                .filter(Objects::nonNull)
                 .map(k -> k.getBytes(StandardCharsets.UTF_8))
                 .toList();
     }
