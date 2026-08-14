@@ -82,4 +82,28 @@ class ConfigLoaderTest {
         Config config = ConfigLoader.load(file);
         assertEquals(8443, config.port()); // Falls back to default
     }
+
+    @Test
+    void shouldLoadPoolConfigFromYaml() throws Exception {
+        String yaml = """
+                pool:
+                  maxTotal: 20
+                  maxIdle: 8
+                  idleTimeoutSeconds: 300
+                  maxLifetimeSeconds: 1800
+                  validationIntervalSeconds: 15
+                  borrowTimeoutMs: 5000
+                """;
+        Path file = tempDir.resolve("gateway.yml");
+        Files.writeString(file, yaml);
+
+        Config config = ConfigLoader.load(file);
+        assertNotNull(config.poolConfig());
+        assertEquals(20, config.poolConfig().maxTotal());
+        assertEquals(8, config.poolConfig().maxIdle());
+        assertEquals(300, config.poolConfig().idleTimeoutSeconds());
+        assertEquals(1800, config.poolConfig().maxLifetimeSeconds());
+        assertEquals(15, config.poolConfig().validationIntervalSeconds());
+        assertEquals(5000L, config.poolConfig().borrowTimeoutMs());
+    }
 }

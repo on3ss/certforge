@@ -25,6 +25,10 @@ public enum AuditEventType {
     SESSION_CLOSED,
     SESSION_EXPIRED,
     SESSION_NOT_FOUND,
+    POOL_BORROW,
+    POOL_RETURN,
+    POOL_EXHAUSTED,
+    POOL_EVICT,
 
     // Signing
     DOCUMENT_SIGNED,

@@ -2,10 +2,12 @@ package com.certforge.session;
 
 import com.certforge.audit.AuditLogger;
 import com.certforge.discovery.TokenInfo;
+import com.certforge.pool.Pkcs11SessionPool;
+import com.certforge.pool.PoolConfig;
+import com.certforge.pool.PooledSession;
+import com.certforge.pool.SunPkcs11SessionFactory;
 
 import java.security.KeyStore;
-import java.security.Provider;
-import java.security.Security;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.util.*;
@@ -19,18 +21,32 @@ public class SessionManager {
 
     private static final Logger LOG = Logger.getLogger(SessionManager.class.getName());
 
-    private final Map<String, SessionData> sessions = new ConcurrentHashMap<>();
+    private final Map<String, PooledSession> activeSessions = new ConcurrentHashMap<>();
     private final AuditLogger auditLogger;
+    private final Pkcs11SessionPool pool;
     private final int inactivityTimeoutSeconds;
     private final int maxLifetimeSeconds;
     private final ScheduledExecutorService cleanupExecutor;
 
     public SessionManager(AuditLogger auditLogger) {
-        this(auditLogger, 3600, 86400); // Defaults: 1h inactivity, 24h max
+        this(auditLogger, PoolConfig.defaultConfig(), 3600, 86400);
     }
 
     public SessionManager(AuditLogger auditLogger, int inactivityTimeoutSeconds, int maxLifetimeSeconds) {
+        this(auditLogger, PoolConfig.defaultConfig(), inactivityTimeoutSeconds, maxLifetimeSeconds);
+    }
+
+    public SessionManager(AuditLogger auditLogger, PoolConfig poolConfig) {
+        this(auditLogger, poolConfig, 3600, 86400);
+    }
+
+    public SessionManager(AuditLogger auditLogger, PoolConfig poolConfig, int inactivityTimeoutSeconds, int maxLifetimeSeconds) {
+        this(auditLogger, new Pkcs11SessionPool(poolConfig, new SunPkcs11SessionFactory(), auditLogger), inactivityTimeoutSeconds, maxLifetimeSeconds);
+    }
+
+    public SessionManager(AuditLogger auditLogger, Pkcs11SessionPool pool, int inactivityTimeoutSeconds, int maxLifetimeSeconds) {
         this.auditLogger = auditLogger;
+        this.pool = pool;
         this.inactivityTimeoutSeconds = inactivityTimeoutSeconds;
         this.maxLifetimeSeconds = maxLifetimeSeconds;
         this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -50,35 +66,17 @@ public class SessionManager {
     }
 
     /**
-     * Opens a session to the given token using the PIN.
+     * Opens a session to the given token using the PIN, borrowing from pool.
      */
     public String openSession(TokenInfo token, String pin) throws Exception {
-        String config = "--name=CertForge-" + token.id() + "\n" +
-                "library=" + token.libraryPath() + "\n" +
-                "slot=" + token.slotId() + "\n";
+        PooledSession session = pool.borrow(token, pin);
+        String sessionId = session.id();
+        activeSessions.put(sessionId, session);
 
-        Provider provider = Security.getProvider("SunPKCS11");
-        if (provider != null) {
-            provider = provider.configure(config);
-        } else {
-            provider = new sun.security.pkcs11.SunPKCS11().configure(config);
+        if (auditLogger != null) {
+            auditLogger.logPoolBorrow(sessionId, token.id());
+            auditLogger.logSessionOpened(sessionId, token.id());
         }
-        Security.addProvider(provider);
-
-        char[] pinChars = pin != null ? pin.toCharArray() : new char[0];
-        KeyStore ks;
-        try {
-            ks = KeyStore.getInstance("PKCS11", provider);
-            ks.load(null, pinChars);
-        } finally {
-            // Note: pinChars buffer stored in SessionData for duration of session, or wiped on fail
-        }
-
-        String sessionId = UUID.randomUUID().toString().replace("-", "");
-        Instant now = Instant.now();
-        sessions.put(sessionId, new SessionData(token, provider, ks, pinChars, now, now));
-
-        auditLogger.logSessionOpened(sessionId, token.id());
         LOG.info("Session opened: " + sessionId + " for token " + token.id());
         return sessionId;
     }
@@ -87,19 +85,19 @@ public class SessionManager {
      * Lists certificates — also refreshes last activity.
      */
     public List<CertificateInfo> listCertificates(String sessionId) throws Exception {
-        SessionData session = getSession(sessionId);
-        session.touch(); // Refresh activity
+        PooledSession session = getSession(sessionId);
+        session.touch(Instant.now());
         List<CertificateInfo> certificates = new ArrayList<>();
 
-        Enumeration<String> aliases = session.keyStore.aliases();
+        Enumeration<String> aliases = session.keyStore().aliases();
         while (aliases.hasMoreElements()) {
             String alias = aliases.nextElement();
             X509Certificate cert = null;
 
-            if (session.keyStore.isCertificateEntry(alias)) {
-                cert = (X509Certificate) session.keyStore.getCertificate(alias);
-            } else if (session.keyStore.isKeyEntry(alias)) {
-                cert = (X509Certificate) session.keyStore.getCertificate(alias);
+            if (session.keyStore().isCertificateEntry(alias)) {
+                cert = (X509Certificate) session.keyStore().getCertificate(alias);
+            } else if (session.keyStore().isKeyEntry(alias)) {
+                cert = (X509Certificate) session.keyStore().getCertificate(alias);
             }
 
             if (cert != null) {
@@ -132,33 +130,31 @@ public class SessionManager {
      * Gets the KeyStore — also refreshes last activity.
      */
     public KeyStore getKeyStore(String sessionId) throws Exception {
-        SessionData session = getSession(sessionId);
-        session.touch();
-        return session.keyStore;
+        PooledSession session = getSession(sessionId);
+        session.touch(Instant.now());
+        return session.keyStore();
     }
 
     /**
      * Gets the token — also refreshes last activity.
      */
     public TokenInfo getToken(String sessionId) throws Exception {
-        SessionData session = getSession(sessionId);
-        session.touch();
-        return session.token;
+        PooledSession session = getSession(sessionId);
+        session.touch(Instant.now());
+        return session.token();
     }
 
     /**
-     * Closes a session and releases resources.
+     * Closes a session and returns it to the pool.
      */
     public void closeSession(String sessionId) {
-        SessionData session = sessions.remove(sessionId);
+        PooledSession session = activeSessions.remove(sessionId);
         if (session != null) {
-            try {
-                Security.removeProvider(session.provider.getName());
-            } catch (Exception e) {
-                LOG.fine("Exception removing provider: " + e.getMessage());
+            pool.returnSession(session);
+            if (auditLogger != null) {
+                auditLogger.logPoolReturn(sessionId, session.token().id());
+                auditLogger.logSessionClosed(sessionId, session.token().id());
             }
-            session.wipePin();
-            auditLogger.logSessionClosed(sessionId, session.token.id());
             LOG.info("Session closed: " + sessionId);
         }
     }
@@ -167,16 +163,17 @@ public class SessionManager {
      * Checks if a session exists and is not expired.
      */
     public boolean sessionExists(String sessionId) {
-        SessionData session = sessions.get(sessionId);
+        PooledSession session = activeSessions.get(sessionId);
         if (session == null) return false;
         return !isExpired(session, Instant.now());
     }
 
     /**
-     * Shuts down the cleanup executor.
+     * Shuts down the cleanup executor and session pool.
      */
     public void shutdown() {
         cleanupExecutor.shutdown();
+        pool.shutdown();
         LOG.info("SessionManager shutdown");
     }
 
@@ -187,11 +184,13 @@ public class SessionManager {
         Instant now = Instant.now();
         int expiredCount = 0;
 
-        for (Map.Entry<String, SessionData> entry : sessions.entrySet()) {
+        for (Map.Entry<String, PooledSession> entry : activeSessions.entrySet()) {
             if (isExpired(entry.getValue(), now)) {
                 String sessionId = entry.getKey();
                 closeSession(sessionId);
-                auditLogger.logSessionExpired(sessionId);
+                if (auditLogger != null) {
+                    auditLogger.logSessionExpired(sessionId);
+                }
                 expiredCount++;
             }
         }
@@ -201,61 +200,39 @@ public class SessionManager {
         }
     }
 
-    private boolean isExpired(SessionData session, Instant now) {
+    private boolean isExpired(PooledSession session, Instant now) {
+        if (!session.isValid()) {
+            return true;
+        }
         // Check max lifetime
-        if (session.createdAt.plusSeconds(maxLifetimeSeconds).isBefore(now)) {
+        if (session.createdAt().plusSeconds(maxLifetimeSeconds).isBefore(now)) {
             return true;
         }
         // Check inactivity
-        if (session.lastActivity.plusSeconds(inactivityTimeoutSeconds).isBefore(now)) {
+        if (session.lastUsed().plusSeconds(inactivityTimeoutSeconds).isBefore(now)) {
             return true;
         }
         return false;
     }
 
-    private SessionData getSession(String sessionId) throws Exception {
-        SessionData session = sessions.get(sessionId);
+    private PooledSession getSession(String sessionId) throws Exception {
+        PooledSession session = activeSessions.get(sessionId);
         if (session == null) {
-            auditLogger.logSessionNotFound(sessionId);
+            if (auditLogger != null) {
+                auditLogger.logSessionNotFound(sessionId);
+            }
             throw new Exception("Session not found: " + sessionId);
         }
 
         // Check expiry
         if (isExpired(session, Instant.now())) {
             closeSession(sessionId);
-            auditLogger.logSessionExpired(sessionId);
+            if (auditLogger != null) {
+                auditLogger.logSessionExpired(sessionId);
+            }
             throw new Exception("Session expired: " + sessionId);
         }
 
         return session;
-    }
-
-    private static class SessionData {
-        final TokenInfo token;
-        final Provider provider;
-        final KeyStore keyStore;
-        final char[] pin;
-        final Instant createdAt;
-        volatile Instant lastActivity;
-
-        SessionData(TokenInfo token, Provider provider, KeyStore keyStore, char[] pin,
-                    Instant createdAt, Instant lastActivity) {
-            this.token = token;
-            this.provider = provider;
-            this.keyStore = keyStore;
-            this.pin = pin;
-            this.createdAt = createdAt;
-            this.lastActivity = lastActivity;
-        }
-
-        void touch() {
-            this.lastActivity = Instant.now();
-        }
-
-        void wipePin() {
-            if (pin != null) {
-                Arrays.fill(pin, '0');
-            }
-        }
     }
 }

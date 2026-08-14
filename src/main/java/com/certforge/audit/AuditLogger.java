@@ -145,6 +145,23 @@ public class AuditLogger {
         logEvent(AuditEventType.SESSION_NOT_FOUND, Map.of("sessionId", sessionId));
     }
 
+    // Pool
+    public void logPoolBorrow(String sessionId, String tokenId) {
+        logEvent(AuditEventType.POOL_BORROW, Map.of("sessionId", sessionId, "tokenId", tokenId));
+    }
+
+    public void logPoolReturn(String sessionId, String tokenId) {
+        logEvent(AuditEventType.POOL_RETURN, Map.of("sessionId", sessionId, "tokenId", tokenId));
+    }
+
+    public void logPoolExhausted(String tokenId) {
+        logEvent(AuditEventType.POOL_EXHAUSTED, Map.of("tokenId", tokenId));
+    }
+
+    public void logPoolEvict(String sessionId, String tokenId) {
+        logEvent(AuditEventType.POOL_EVICT, Map.of("sessionId", sessionId, "tokenId", tokenId));
+    }
+
     // Signing
     public void logDocumentSigned(String sessionId, String alias, String result,
                                   long pdfSize, long signatureSize) {

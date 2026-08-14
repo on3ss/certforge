@@ -52,8 +52,21 @@ public class ConfigLoader {
         Map<String, Object> logging = getMap(raw, "logging");
         String logLevel = getString(logging, "level", DEFAULT_LOGGING_LEVEL);
 
+        Map<String, Object> poolMap = getMap(raw, "pool");
+        com.certforge.pool.PoolConfig defaultPoolConfig = com.certforge.pool.PoolConfig.defaultConfig();
+        int maxTotal = getInt(poolMap, "maxTotal", defaultPoolConfig.maxTotal());
+        int maxIdle = getInt(poolMap, "maxIdle", defaultPoolConfig.maxIdle());
+        int idleTimeout = getInt(poolMap, "idleTimeoutSeconds", defaultPoolConfig.idleTimeoutSeconds());
+        int poolMaxLifetime = getInt(poolMap, "maxLifetimeSeconds", defaultPoolConfig.maxLifetimeSeconds());
+        int valInterval = getInt(poolMap, "validationIntervalSeconds", defaultPoolConfig.validationIntervalSeconds());
+        long borrowTimeout = getLong(poolMap, "borrowTimeoutMs", defaultPoolConfig.borrowTimeoutMs());
+
+        com.certforge.pool.PoolConfig poolConfig = new com.certforge.pool.PoolConfig(
+                maxTotal, maxIdle, idleTimeout, poolMaxLifetime, valInterval, borrowTimeout
+        );
+
         LOG.fine(() -> "Configuration parsed successfully: port=" + port + ", apiKeysCount=" + apiKeys.size() + ", logLevel=" + logLevel);
-        return new Config(port, apiKeys, inactivity, maxLifetime, auditPath, logLevel);
+        return new Config(port, apiKeys, inactivity, maxLifetime, auditPath, logLevel, poolConfig);
     }
 
     private static Map<String, Object> parseYaml(Path path) throws Exception {
@@ -121,6 +134,19 @@ public class ConfigLoader {
         } else if (val instanceof String str) {
             try {
                 return Integer.parseInt(str);
+            } catch (NumberFormatException _) {
+            }
+        }
+        return defaultValue;
+    }
+
+    private static long getLong(Map<String, Object> map, String key, long defaultValue) {
+        Object val = map.get(key);
+        if (val instanceof Number number) {
+            return number.longValue();
+        } else if (val instanceof String str) {
+            try {
+                return Long.parseLong(str);
             } catch (NumberFormatException _) {
             }
         }

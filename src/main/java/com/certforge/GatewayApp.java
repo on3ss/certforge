@@ -55,6 +55,7 @@ public class GatewayApp {
         // 5. Session management
         sessionManager = new SessionManager(
                 auditLogger,
+                config.poolConfig(),
                 config.sessionInactivityTimeout(),
                 config.sessionMaxLifetime()
         );
