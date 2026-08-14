@@ -114,15 +114,57 @@ public final class JsonUtils {
                 + "}";
     }
 
+    public static List<String> extractJsonStringList(String json, String key) {
+        if (json == null || key == null) return null;
+        String searchKey = "\"" + key + "\"";
+        int keyIndex = json.indexOf(searchKey);
+        if (keyIndex < 0) return null;
+
+        int bracketStart = json.indexOf("[", keyIndex + searchKey.length());
+        if (bracketStart < 0) return null;
+
+        int bracketEnd = json.indexOf("]", bracketStart);
+        if (bracketEnd < 0) return null;
+
+        String arrayContent = json.substring(bracketStart + 1, bracketEnd);
+        List<String> list = new java.util.ArrayList<>();
+        boolean inQuotes = false;
+        StringBuilder current = new StringBuilder();
+
+        for (int i = 0; i < arrayContent.length(); i++) {
+            char c = arrayContent.charAt(i);
+            if (c == '\\' && i + 1 < arrayContent.length()) {
+                current.append(arrayContent.charAt(i + 1));
+                i++;
+            } else if (c == '"') {
+                if (inQuotes) {
+                    list.add(current.toString());
+                    current.setLength(0);
+                    inQuotes = false;
+                } else {
+                    inQuotes = true;
+                }
+            } else if (inQuotes) {
+                current.append(c);
+            }
+        }
+        return list;
+    }
+
+    private static String extractValue(String json, String primaryKey, String secondaryKey) {
+        String val = extractJsonValue(json, primaryKey);
+        if (val == null && secondaryKey != null) {
+            val = extractJsonValue(json, secondaryKey);
+        }
+        return val;
+    }
+
     public static com.certforge.signing.appearance.SignatureAppearance parseAppearance(String json) {
         if (json == null) {
             return null;
         }
 
-        String typeStr = extractJsonValue(json, "appearanceType");
-        if (typeStr == null) {
-            typeStr = extractJsonValue(json, "type");
-        }
+        String typeStr = extractValue(json, "appearanceType", "type");
         if (typeStr == null && !json.contains("\"appearance\"")) {
             return null;
         }
@@ -134,47 +176,26 @@ public final class JsonUtils {
             default -> com.certforge.signing.appearance.SignatureAppearance.Type.TEXT;
         };
 
-        String pageVal = extractJsonValue(json, "appearancePage");
-        if (pageVal == null) pageVal = extractJsonValue(json, "page");
-        int page = parseOrDefaultInt(pageVal, 0);
+        int page = parseOrDefaultInt(extractValue(json, "appearancePage", "page"), 0);
+        float x = parseOrDefaultFloat(extractValue(json, "appearanceX", "x"), 0f);
+        float y = parseOrDefaultFloat(extractValue(json, "appearanceY", "y"), 0f);
+        float width = parseOrDefaultFloat(extractValue(json, "appearanceWidth", "width"), 200f);
+        float height = parseOrDefaultFloat(extractValue(json, "appearanceHeight", "height"), 50f);
+        float fontSize = parseOrDefaultFloat(extractValue(json, "appearanceFontSize", "fontSize"), 10f);
+        float padding = parseOrDefaultFloat(extractValue(json, "appearancePadding", "padding"), 6f);
 
-        String xVal = extractJsonValue(json, "appearanceX");
-        if (xVal == null) xVal = extractJsonValue(json, "x");
-        float x = parseOrDefaultFloat(xVal, 0f);
-
-        String yVal = extractJsonValue(json, "appearanceY");
-        if (yVal == null) yVal = extractJsonValue(json, "y");
-        float y = parseOrDefaultFloat(yVal, 0f);
-
-        String wVal = extractJsonValue(json, "appearanceWidth");
-        if (wVal == null) wVal = extractJsonValue(json, "width");
-        float width = parseOrDefaultFloat(wVal, 200f);
-
-        String hVal = extractJsonValue(json, "appearanceHeight");
-        if (hVal == null) hVal = extractJsonValue(json, "height");
-        float height = parseOrDefaultFloat(hVal, 50f);
-
-        String fsVal = extractJsonValue(json, "appearanceFontSize");
-        if (fsVal == null) fsVal = extractJsonValue(json, "fontSize");
-        float fontSize = parseOrDefaultFloat(fsVal, 10f);
-
-        String pagePosStr = extractJsonValue(json, "appearancePosition");
+        String pagePosStr = extractValue(json, "appearancePosition", "pagePosition");
         if (pagePosStr == null) {
-            pagePosStr = extractJsonValue(json, "pagePosition");
+            pagePosStr = extractValue(json, "position", "pos");
         }
-        com.certforge.signing.appearance.SignatureAppearance.PagePosition pagePos = pagePosStr != null
-                ? com.certforge.signing.appearance.SignatureAppearance.PagePosition.fromString(pagePosStr)
-                : null;
+        var pagePos = com.certforge.signing.appearance.SignatureAppearance.PagePosition.fromString(pagePosStr);
 
-        String posTypeStr = extractJsonValue(json, "positionType");
-        com.certforge.signing.appearance.SignatureAppearance.PositionType posType;
-        if ("pagePosition".equalsIgnoreCase(posTypeStr) || pagePos != null) {
-            posType = com.certforge.signing.appearance.SignatureAppearance.PositionType.PAGE_POSITION;
-        } else {
-            posType = com.certforge.signing.appearance.SignatureAppearance.PositionType.ABSOLUTE;
-        }
+        String posTypeStr = extractValue(json, "positionType", "typePosition");
+        var posType = ("pagePosition".equalsIgnoreCase(posTypeStr) || pagePos != null)
+                ? com.certforge.signing.appearance.SignatureAppearance.PositionType.PAGE_POSITION
+                : com.certforge.signing.appearance.SignatureAppearance.PositionType.ABSOLUTE;
 
-        String imgBase64 = extractJsonValue(json, "appearanceImageBase64");
+        String imgBase64 = extractValue(json, "appearanceImageBase64", "imageBase64");
         byte[] imgData = null;
         if (imgBase64 != null && !imgBase64.isBlank()) {
             try {
@@ -182,29 +203,19 @@ public final class JsonUtils {
             } catch (Exception _) {}
         }
 
-        String reason = extractJsonValue(json, "reason");
-        String location = extractJsonValue(json, "location");
+        String reason = extractValue(json, "appearanceReason", "reason");
+        String location = extractValue(json, "appearanceLocation", "location");
+        String searchText = extractValue(json, "appearanceSearchText", "searchText");
+        String searchPosStr = extractValue(json, "appearanceSearchPosition", "searchPosition");
+        var searchPos = com.certforge.signing.appearance.SignatureAppearance.SearchPosition.fromString(searchPosStr);
 
-        String searchText = extractJsonValue(json, "appearanceSearchText");
-        if (searchText == null) {
-            searchText = extractJsonValue(json, "searchText");
+        List<String> textLines = extractJsonStringList(json, "appearanceTextLines");
+        if (textLines == null) {
+            textLines = extractJsonStringList(json, "textLines");
         }
-
-        String searchPosStr = extractJsonValue(json, "appearanceSearchPosition");
-        if (searchPosStr == null) {
-            searchPosStr = extractJsonValue(json, "searchPosition");
-        }
-        com.certforge.signing.appearance.SignatureAppearance.SearchPosition searchPos =
-                com.certforge.signing.appearance.SignatureAppearance.SearchPosition.fromString(searchPosStr);
-
-        String paddingStr = extractJsonValue(json, "appearancePadding");
-        if (paddingStr == null) {
-            paddingStr = extractJsonValue(json, "padding");
-        }
-        float padding = parseOrDefaultFloat(paddingStr, 6f);
 
         return new com.certforge.signing.appearance.SignatureAppearance(
-                type, posType, page, x, y, width, height, pagePos, null, fontSize, imgData, null, reason, location, searchText, searchPos, padding
+                type, posType, page, x, y, width, height, pagePos, textLines, fontSize, imgData, null, reason, location, searchText, searchPos, padding
         );
     }
 
