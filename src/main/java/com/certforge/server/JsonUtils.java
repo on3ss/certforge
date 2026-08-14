@@ -3,8 +3,8 @@ package com.certforge.server;
 import com.certforge.discovery.TokenInfo;
 import com.certforge.session.CertificateInfo;
 import com.certforge.signing.appearance.SignatureAppearance;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.ArrayList;

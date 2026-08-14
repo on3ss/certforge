@@ -8,7 +8,7 @@ on:
 
 jobs:
   lint:
-    name: Lint Check
+    name: Code Quality Check
     runs-on: ubuntu-latest
 
     steps:
@@ -21,8 +21,14 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
-      - name: Run SpotBugs (if configured)
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Run Checkstyle (if configured)
         run: |
-          # Add SpotBugs plugin to build.gradle if not already present
-          # ./gradlew spotbugsMain
-          echo "No lint configured yet"
+          # Add Checkstyle plugin to build.gradle
+          # ./gradlew checkstyleMain
+          echo "No lint tool configured for Java 25 yet"
+
+      - name: Run tests (as basic quality gate)
+        run: ./gradlew test --no-daemon

@@ -1,7 +1,6 @@
 plugins {
     id 'java'
     id 'application'
-    id 'com.github.spotbugs' version '6.0.25'
 }
 
 group = 'com.certforge'
@@ -37,6 +36,7 @@ application {
 
 repositories {
     mavenCentral()
+    maven { url 'https://oss.sonatype.org/content/repositories/snapshots/' }
 }
 
 dependencies {
