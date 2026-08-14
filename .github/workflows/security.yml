@@ -5,6 +5,7 @@ on:
     - cron: '0 0 * * 0'  # Weekly on Sunday
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   dependency-check:
@@ -15,10 +16,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 25
+      - name: Set up JDK 21 (for Dependency Check tool)
         uses: actions/setup-java@v4
         with:
-          java-version: '25'
+          java-version: '21'
           distribution: 'temurin'
 
       - name: Run OWASP Dependency Check
@@ -30,9 +31,12 @@ jobs:
           args: >
             --failOnCVSS 7
             --enableRetired
+        env:
+          JAVA_HOME: /opt/java/openjdk  # Docker container's Java
 
       - name: Upload dependency report
         uses: actions/upload-artifact@v4
         with:
           name: dependency-check-report
-          path: ${{ github.workspace }}/reports/
+          path: reports/
+          retention-days: 30

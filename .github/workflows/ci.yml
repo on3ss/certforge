@@ -22,6 +22,9 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -71,6 +74,9 @@ jobs:
         with:
           java-version: '25'
           distribution: 'temurin'
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
