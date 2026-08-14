@@ -22,6 +22,26 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
+      - name: Cache Dependency Check NVD database
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/dependency-check
+            ~/.m2/repository/org/owasp
+          key: ${{ runner.os }}-dependency-check-${{ hashFiles('build.gradle') }}
+          restore-keys: |
+            ${{ runner.os }}-dependency-check-
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: Download Dependency Check CLI
         run: |
           curl -L -o dependency-check.zip https://github.com/jeremylong/DependencyCheck/releases/download/v10.0.2/dependency-check-10.0.2-release.zip
@@ -36,7 +56,10 @@ jobs:
             --format HTML \
             --out reports/ \
             --failOnCVSS 7 \
-            --enableRetired
+            --enableRetired \
+            --nvdApiKey ${{ secrets.NVD_API_KEY }}
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
       - name: Upload dependency report
         uses: actions/upload-artifact@v4
