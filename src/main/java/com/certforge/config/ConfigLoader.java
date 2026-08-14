@@ -65,8 +65,64 @@ public class ConfigLoader {
                 maxTotal, maxIdle, idleTimeout, poolMaxLifetime, valInterval, borrowTimeout
         );
 
+        String templatesDirStr = getString(raw, "templatesDir", "templates");
+        Path templatesDir = Path.of(templatesDirStr);
+
+        com.certforge.signing.appearance.TemplateManager templateManager = new com.certforge.signing.appearance.TemplateManager();
+        Map<String, Object> templatesRaw = getMap(raw, "templates");
+        for (Map.Entry<String, Object> entry : templatesRaw.entrySet()) {
+            String name = entry.getKey();
+            if (entry.getValue() instanceof Map<?, ?> tMap) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> map = (Map<String, Object>) tMap;
+
+                String typeStr = getString(map, "type", "TEXT");
+                com.certforge.signing.appearance.SignatureAppearance.Type type = switch (typeStr.toUpperCase()) {
+                    case "NONE" -> com.certforge.signing.appearance.SignatureAppearance.Type.NONE;
+                    case "IMAGE" -> com.certforge.signing.appearance.SignatureAppearance.Type.IMAGE;
+                    case "TEXT_IMAGE", "TEXTIMAGE" -> com.certforge.signing.appearance.SignatureAppearance.Type.TEXT_IMAGE;
+                    default -> com.certforge.signing.appearance.SignatureAppearance.Type.TEXT;
+                };
+
+                int page = getInt(map, "page", 0);
+                Map<String, Object> rect = getMap(map, "rectangle");
+                float x = getFloat(rect, "x", 0f);
+                float y = getFloat(rect, "y", 0f);
+                float width = getFloat(rect, "width", 200f);
+                float height = getFloat(rect, "height", 50f);
+
+                String pagePosStr = getString(map, "pagePosition", null);
+                com.certforge.signing.appearance.SignatureAppearance.PagePosition pagePos = pagePosStr != null
+                        ? com.certforge.signing.appearance.SignatureAppearance.PagePosition.fromString(pagePosStr)
+                        : null;
+
+                com.certforge.signing.appearance.SignatureAppearance.PositionType posType = pagePos != null
+                        ? com.certforge.signing.appearance.SignatureAppearance.PositionType.PAGE_POSITION
+                        : com.certforge.signing.appearance.SignatureAppearance.PositionType.ABSOLUTE;
+
+                Map<String, Object> textMap = getMap(map, "text");
+                List<String> lines = getList(textMap, "lines", Collections.emptyList());
+                float fontSize = getFloat(textMap, "fontSize", 10f);
+
+                Map<String, Object> imgMap = getMap(map, "image");
+                String imgPath = getString(imgMap, "path", null);
+                if (imgPath != null && !Path.of(imgPath).isAbsolute()) {
+                    imgPath = templatesDir.resolve(imgPath).toString();
+                }
+
+                String reason = getString(map, "reason", null);
+                String location = getString(map, "location", null);
+
+                com.certforge.signing.appearance.SignatureAppearance app = new com.certforge.signing.appearance.SignatureAppearance(
+                        type, posType, page, x, y, width, height, pagePos, lines, fontSize, null, imgPath, reason, location
+                );
+
+                templateManager.registerTemplate(new com.certforge.signing.appearance.TemplateDefinition(name, app));
+            }
+        }
+
         LOG.fine(() -> "Configuration parsed successfully: port=" + port + ", apiKeysCount=" + apiKeys.size() + ", logLevel=" + logLevel);
-        return new Config(port, apiKeys, inactivity, maxLifetime, auditPath, logLevel, poolConfig);
+        return new Config(port, apiKeys, inactivity, maxLifetime, auditPath, logLevel, poolConfig, templateManager, templatesDir);
     }
 
     private static Map<String, Object> parseYaml(Path path) throws Exception {
@@ -147,6 +203,19 @@ public class ConfigLoader {
         } else if (val instanceof String str) {
             try {
                 return Long.parseLong(str);
+            } catch (NumberFormatException _) {
+            }
+        }
+        return defaultValue;
+    }
+
+    private static float getFloat(Map<String, Object> map, String key, float defaultValue) {
+        Object val = map.get(key);
+        if (val instanceof Number number) {
+            return number.floatValue();
+        } else if (val instanceof String str) {
+            try {
+                return Float.parseFloat(str);
             } catch (NumberFormatException _) {
             }
         }

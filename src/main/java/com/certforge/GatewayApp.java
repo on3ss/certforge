@@ -61,7 +61,7 @@ public class GatewayApp {
         );
 
         // 6. Assemble gateway
-        RestServer server = getRestServer(authenticator, auditLogger);
+        RestServer server = getRestServer(config, authenticator, auditLogger);
 
         // 7. Add shutdown hook (also audits shutdown and closes sessions)
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -118,7 +118,7 @@ public class GatewayApp {
         return port;
     }
 
-    private static RestServer getRestServer(Authenticator authenticator, AuditLogger auditLogger) {
+    private static RestServer getRestServer(Config config, Authenticator authenticator, AuditLogger auditLogger) {
         // Token discovery
         TokenDiscoverer discoverer = new Pkcs11TokenDiscoverer(
                 new DefaultLibraryPathProvider(), auditLogger
@@ -135,7 +135,7 @@ public class GatewayApp {
         PdfVerificationService pdfVerificationService = new PdfVerificationService(auditLogger);
 
         return new RestServer(
-                discoverer, authenticator, sessionManager, pdfSigningService, auditLogger, pdfVerificationService
+                discoverer, authenticator, sessionManager, pdfSigningService, auditLogger, pdfVerificationService, config.templateManager()
         );
     }
 }

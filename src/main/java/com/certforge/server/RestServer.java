@@ -7,6 +7,8 @@ import com.certforge.discovery.TokenInfo;
 import com.certforge.session.CertificateInfo;
 import com.certforge.session.SessionManager;
 import com.certforge.signing.SigningService;
+import com.certforge.signing.appearance.SignatureAppearance;
+import com.certforge.signing.appearance.TemplateManager;
 import com.certforge.verify.VerificationService;
 import com.certforge.verify.VerificationResult;
 import com.sun.net.httpserver.HttpExchange;
@@ -33,16 +35,25 @@ public class RestServer {
     private final SigningService signingService;
     private final AuditLogger auditLogger;
     private final VerificationService verificationService;
+    private final TemplateManager templateManager;
 
     public RestServer(TokenDiscoverer discoverer, Authenticator authenticator,
                       SessionManager sessionManager, SigningService signingService,
                       AuditLogger auditLogger, VerificationService verificationService) {
+        this(discoverer, authenticator, sessionManager, signingService, auditLogger, verificationService, new TemplateManager());
+    }
+
+    public RestServer(TokenDiscoverer discoverer, Authenticator authenticator,
+                      SessionManager sessionManager, SigningService signingService,
+                      AuditLogger auditLogger, VerificationService verificationService,
+                      TemplateManager templateManager) {
         this.discoverer = Objects.requireNonNull(discoverer, "discoverer cannot be null");
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator cannot be null");
         this.sessionManager = Objects.requireNonNull(sessionManager, "sessionManager cannot be null");
         this.signingService = Objects.requireNonNull(signingService, "signingService cannot be null");
         this.auditLogger = Objects.requireNonNull(auditLogger, "auditLogger cannot be null");
         this.verificationService = Objects.requireNonNull(verificationService, "verificationService cannot be null");
+        this.templateManager = templateManager != null ? templateManager : new TemplateManager();
     }
 
     public int start(int port) throws IOException {
@@ -191,7 +202,16 @@ public class RestServer {
             byte[] pdfBytes = Base64.getDecoder().decode(documentBase64);
             LOG.info("Signing PDF (" + pdfBytes.length + " bytes) with alias '" + alias + "'");
 
-            byte[] signedPdf = signingService.signPdf(sessionId, alias, pdfBytes);
+            String templateName = JsonUtils.extractJsonValue(body, "template");
+            SignatureAppearance explicitAppearance = JsonUtils.parseAppearance(body);
+
+            SignatureAppearance appearance = templateManager.resolveAndMerge(
+                    templateName, explicitAppearance, alias,
+                    explicitAppearance != null ? explicitAppearance.reason() : null,
+                    explicitAppearance != null ? explicitAppearance.location() : null
+            );
+
+            byte[] signedPdf = signingService.signPdf(sessionId, alias, pdfBytes, appearance);
             String signedBase64 = Base64.getEncoder().encodeToString(signedPdf);
             String jobId = "job_" + UUID.randomUUID().toString().replace("-", "");
 

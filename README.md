@@ -188,13 +188,34 @@ Response:
 
 ### Sign PDF
 
+Invisible signature (default):
+
 ```json
 POST /v1/sessions/{sessionId}/jobs
 {
     "document": "<base64-encoded-pdf>",
     "alias": "myKey"
 }
+```
 
+Visible signature with template & appearance overrides:
+
+```json
+POST /v1/sessions/{sessionId}/jobs
+{
+    "document": "<base64-encoded-pdf>",
+    "alias": "myKey",
+    "template": "standard",
+    "appearance": {
+        "type": "text",
+        "page": 0,
+        "positionType": "pagePosition",
+        "pagePosition": "bottom-right",
+        "rectangle": { "x": 50, "y": 50, "width": 200, "height": 50 },
+        "reason": "Approved electronically",
+        "location": "Headquarters"
+    }
+}
 ```
 
 Response:
@@ -208,7 +229,6 @@ Response:
         "filename": "signed-document.pdf"
     }
 }
-
 ```
 
 ### Verify PDF
