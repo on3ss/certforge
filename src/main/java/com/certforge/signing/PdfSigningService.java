@@ -92,6 +92,8 @@ public class PdfSigningService implements SigningService {
                     if (searchResult != null) {
                         pageIdx = searchResult.pageIndex();
                         pBBox = searchResult.rectangle();
+                    } else {
+                        LOG.warning("Search text '" + appearance.getSearchText() + "' not found in PDF. Falling back to page position / absolute coordinates.");
                     }
                 }
 

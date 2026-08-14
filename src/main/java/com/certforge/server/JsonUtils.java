@@ -3,249 +3,216 @@ package com.certforge.server;
 import com.certforge.discovery.TokenInfo;
 import com.certforge.session.CertificateInfo;
 import com.certforge.signing.appearance.SignatureAppearance;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 public final class JsonUtils {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private JsonUtils() {
+    }
+
+    public static ObjectMapper mapper() {
+        return MAPPER;
     }
 
     public static String extractJsonValue(String json, String key) {
         if (json == null || key == null) return null;
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return null;
-
-        int colonIndex = json.indexOf(":", keyIndex + searchKey.length());
-        if (colonIndex < 0) return null;
-
-        int valueStart = colonIndex + 1;
-        while (valueStart < json.length() && Character.isWhitespace(json.charAt(valueStart))) {
-            valueStart++;
-        }
-
-        if (valueStart < json.length() && json.charAt(valueStart) == '"') {
-            StringBuilder value = new StringBuilder();
-            for (int i = valueStart + 1; i < json.length(); i++) {
-                char c = json.charAt(i);
-                if (c == '\\' && i + 1 < json.length()) {
-                    value.append(json.charAt(i + 1));
-                    i++;
-                } else if (c == '"') {
-                    return value.toString();
-                } else {
-                    value.append(c);
-                }
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode node = findNode(root, key);
+            if (node != null && !node.isNull() && node.isValueNode()) {
+                return node.asText();
             }
+        } catch (Exception _) {
         }
+        return null;
+    }
 
+    public static List<String> extractJsonStringList(String json, String key) {
+        if (json == null || key == null) return null;
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode arrayNode = findNode(root, key);
+            if (arrayNode != null && arrayNode.isArray()) {
+                List<String> list = new ArrayList<>();
+                for (JsonNode item : arrayNode) {
+                    list.add(item.asText());
+                }
+                return list;
+            }
+        } catch (Exception _) {
+        }
+        return null;
+    }
+
+    private static JsonNode findNode(JsonNode root, String key) {
+        if (root == null || key == null) return null;
+        if (root.has(key)) return root.get(key);
+        if (root.has("appearance") && root.get("appearance").has(key)) {
+            return root.get("appearance").get(key);
+        }
         return null;
     }
 
     public static String escape(String s) {
         if (s == null) return "";
-        StringBuilder sb = new StringBuilder();
-        for (char c : s.toCharArray()) {
-            switch (c) {
-                case '\\' -> sb.append("\\\\");
-                case '"' -> sb.append("\\\"");
-                case '\n' -> sb.append("\\n");
-                case '\r' -> sb.append("\\r");
-                case '\t' -> sb.append("\\t");
-                default -> {
-                    if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
-                    } else {
-                        sb.append(c);
-                    }
-                }
-            }
+        try {
+            return MAPPER.writeValueAsString(s).replaceAll("^\"|\"$", "");
+        } catch (Exception _) {
+            return s;
         }
-        return sb.toString();
     }
 
     public static String buildTokensJson(List<TokenInfo> tokens) {
-        StringBuilder json = new StringBuilder("{\"tokens\":[");
-        for (int i = 0; i < tokens.size(); i++) {
-            TokenInfo t = tokens.get(i);
-            if (i > 0) json.append(",");
-            json.append("{")
-                    .append("\"id\":\"").append(escape(t.id())).append("\",")
-                    .append("\"label\":\"").append(escape(t.label())).append("\",")
-                    .append("\"manufacturer\":\"").append(escape(t.manufacturer())).append("\",")
-                    .append("\"serial\":\"").append(escape(t.serial())).append("\",")
-                    .append("\"libraryPath\":\"").append(escape(t.libraryPath())).append("\",")
-                    .append("\"slotId\":").append(t.slotId())
-                    .append("}");
+        try {
+            return MAPPER.writeValueAsString(java.util.Map.of("tokens", tokens));
+        } catch (Exception e) {
+            return "{\"tokens\":[]}";
         }
-        json.append("]}");
-        return json.toString();
     }
 
     public static String buildCertificatesJson(List<CertificateInfo> certs) {
-        StringBuilder json = new StringBuilder("{\"certificates\":[");
-        for (int i = 0; i < certs.size(); i++) {
-            CertificateInfo c = certs.get(i);
-            if (i > 0) json.append(",");
-            json.append("{")
-                    .append("\"alias\":\"").append(escape(c.alias())).append("\",")
-                    .append("\"subject\":\"").append(escape(c.subject())).append("\",")
-                    .append("\"issuer\":\"").append(escape(c.issuer())).append("\",")
-                    .append("\"serialNumber\":\"").append(escape(c.serialNumber())).append("\",")
-                    .append("\"notBefore\":\"").append(escape(c.notBefore())).append("\",")
-                    .append("\"notAfter\":\"").append(escape(c.notAfter())).append("\",")
-                    .append("\"keyType\":\"").append(escape(c.keyType())).append("\",")
-                    .append("\"keySize\":").append(c.keySize())
-                    .append("}");
+        try {
+            return MAPPER.writeValueAsString(java.util.Map.of("certificates", certs));
+        } catch (Exception e) {
+            return "{\"certificates\":[]}";
         }
-        json.append("]}");
-        return json.toString();
     }
 
     public static String buildErrorJson(int statusCode, String errorCode, String message) {
         String timestamp = Instant.now().toString();
-        return "{"
-                + "\"error\":\"" + escape(errorCode) + "\","
-                + "\"message\":\"" + escape(message) + "\","
-                + "\"status\":" + statusCode + ","
-                + "\"timestamp\":\"" + timestamp + "\""
-                + "}";
+        try {
+            return MAPPER.writeValueAsString(java.util.Map.of(
+                    "error", errorCode != null ? errorCode : "",
+                    "message", message != null ? message : "",
+                    "status", statusCode,
+                    "timestamp", timestamp
+            ));
+        } catch (Exception e) {
+            return "{\"error\":\"" + errorCode + "\",\"message\":\"" + message + "\",\"status\":" + statusCode + "}";
+        }
     }
 
-    public static List<String> extractJsonStringList(String json, String key) {
-        if (json == null || key == null) return null;
-        String searchKey = "\"" + key + "\"";
-        int keyIndex = json.indexOf(searchKey);
-        if (keyIndex < 0) return null;
+    public static SignatureAppearance parseAppearance(String json) {
+        if (json == null || json.isBlank()) return null;
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode appNode = root.has("appearance") ? root.get("appearance") : root;
 
-        int bracketStart = json.indexOf("[", keyIndex + searchKey.length());
-        if (bracketStart < 0) return null;
+            String typeStr = getText(root, appNode, "appearanceType", "type");
+            if (typeStr == null && !root.has("appearance")) {
+                return null;
+            }
 
-        int bracketEnd = json.indexOf("]", bracketStart);
-        if (bracketEnd < 0) return null;
+            SignatureAppearance.Type type = switch (typeStr != null ? typeStr.toUpperCase() : "TEXT") {
+                case "NONE" -> SignatureAppearance.Type.NONE;
+                case "IMAGE" -> SignatureAppearance.Type.IMAGE;
+                case "TEXT_IMAGE", "TEXTIMAGE" -> SignatureAppearance.Type.TEXT_IMAGE;
+                default -> SignatureAppearance.Type.TEXT;
+            };
 
-        String arrayContent = json.substring(bracketStart + 1, bracketEnd);
-        List<String> list = new java.util.ArrayList<>();
-        boolean inQuotes = false;
-        StringBuilder current = new StringBuilder();
+            int page = getInt(root, appNode, "appearancePage", "page", 0);
+            float x = getFloat(root, appNode, "appearanceX", "x", 0f);
+            float y = getFloat(root, appNode, "appearanceY", "y", 0f);
+            float width = getFloat(root, appNode, "appearanceWidth", "width", 200f);
+            float height = getFloat(root, appNode, "appearanceHeight", "height", 50f);
+            float fontSize = getFloat(root, appNode, "appearanceFontSize", "fontSize", 10f);
+            float padding = getFloat(root, appNode, "appearancePadding", "padding", 6f);
 
-        for (int i = 0; i < arrayContent.length(); i++) {
-            char c = arrayContent.charAt(i);
-            if (c == '\\' && i + 1 < arrayContent.length()) {
-                current.append(arrayContent.charAt(i + 1));
-                i++;
-            } else if (c == '"') {
-                if (inQuotes) {
-                    list.add(current.toString());
-                    current.setLength(0);
-                    inQuotes = false;
-                } else {
-                    inQuotes = true;
-                }
-            } else if (inQuotes) {
-                current.append(c);
+            JsonNode rectNode = (appNode != null && appNode.has("rectangle")) ? appNode.get("rectangle") : (root.has("rectangle") ? root.get("rectangle") : null);
+            if (rectNode != null && rectNode.isObject()) {
+                if (rectNode.has("x")) x = rectNode.get("x").floatValue();
+                if (rectNode.has("y")) y = rectNode.get("y").floatValue();
+                if (rectNode.has("width")) width = rectNode.get("width").floatValue();
+                if (rectNode.has("height")) height = rectNode.get("height").floatValue();
+            }
+
+            String pagePosStr = getText(root, appNode, "appearancePosition", "pagePosition", "position", "pos");
+            var pagePos = SignatureAppearance.PagePosition.fromString(pagePosStr);
+
+            String posTypeStr = getText(root, appNode, "positionType", "typePosition");
+            var posType = ("pagePosition".equalsIgnoreCase(posTypeStr) || pagePos != null)
+                    ? SignatureAppearance.PositionType.PAGE_POSITION
+                    : SignatureAppearance.PositionType.ABSOLUTE;
+
+            String imgBase64 = getText(root, appNode, "appearanceImageBase64", "imageBase64");
+            byte[] imgData = null;
+            if (imgBase64 != null && !imgBase64.isBlank()) {
+                try {
+                    imgData = Base64.getDecoder().decode(imgBase64.trim());
+                } catch (Exception _) {}
+            }
+
+            String reason = getText(root, appNode, "appearanceReason", "reason");
+            String location = getText(root, appNode, "appearanceLocation", "location");
+            String searchText = getText(root, appNode, "appearanceSearchText", "searchText");
+            String searchPosStr = getText(root, appNode, "appearanceSearchPosition", "searchPosition");
+            var searchPos = SignatureAppearance.SearchPosition.fromString(searchPosStr);
+
+            List<String> textLines = getList(root, appNode, "appearanceTextLines", "textLines");
+
+            return SignatureAppearance.builder()
+                    .type(type)
+                    .positionType(posType)
+                    .page(page)
+                    .rectangle(x, y, width, height)
+                    .pagePosition(pagePos)
+                    .textLines(textLines)
+                    .fontSize(fontSize)
+                    .imageData(imgData)
+                    .reason(reason)
+                    .location(location)
+                    .searchText(searchText)
+                    .searchPosition(searchPos)
+                    .padding(padding)
+                    .build();
+        } catch (Exception _) {
+            return null;
+        }
+    }
+
+    private static String getText(JsonNode root, JsonNode appNode, String... keys) {
+        for (String k : keys) {
+            if (appNode != null && appNode.has(k) && !appNode.get(k).isNull()) {
+                return appNode.get(k).asText();
+            }
+            if (root != null && root.has(k) && !root.get(k).isNull()) {
+                return root.get(k).asText();
             }
         }
-        return list;
+        return null;
     }
 
-    private static String extractValue(String json, String primaryKey, String secondaryKey) {
-        String val = extractJsonValue(json, primaryKey);
-        if (val == null && secondaryKey != null) {
-            val = extractJsonValue(json, secondaryKey);
-        }
-        return val;
+    private static int getInt(JsonNode root, JsonNode appNode, String key1, String key2, int def) {
+        String val = getText(root, appNode, key1, key2);
+        if (val == null) return def;
+        try { return Integer.parseInt(val); } catch (Exception _) { return def; }
     }
 
-    public static com.certforge.signing.appearance.SignatureAppearance parseAppearance(String json) {
-        if (json == null) {
-            return null;
-        }
-
-        String typeStr = extractValue(json, "appearanceType", "type");
-        if (typeStr == null && !json.contains("\"appearance\"")) {
-            return null;
-        }
-
-        com.certforge.signing.appearance.SignatureAppearance.Type type = switch (typeStr != null ? typeStr.toUpperCase() : "TEXT") {
-            case "NONE" -> com.certforge.signing.appearance.SignatureAppearance.Type.NONE;
-            case "IMAGE" -> com.certforge.signing.appearance.SignatureAppearance.Type.IMAGE;
-            case "TEXT_IMAGE", "TEXTIMAGE" -> com.certforge.signing.appearance.SignatureAppearance.Type.TEXT_IMAGE;
-            default -> com.certforge.signing.appearance.SignatureAppearance.Type.TEXT;
-        };
-
-        int page = parseOrDefaultInt(extractValue(json, "appearancePage", "page"), 0);
-        float x = parseOrDefaultFloat(extractValue(json, "appearanceX", "x"), 0f);
-        float y = parseOrDefaultFloat(extractValue(json, "appearanceY", "y"), 0f);
-        float width = parseOrDefaultFloat(extractValue(json, "appearanceWidth", "width"), 200f);
-        float height = parseOrDefaultFloat(extractValue(json, "appearanceHeight", "height"), 50f);
-        float fontSize = parseOrDefaultFloat(extractValue(json, "appearanceFontSize", "fontSize"), 10f);
-        float padding = parseOrDefaultFloat(extractValue(json, "appearancePadding", "padding"), 6f);
-
-        String pagePosStr = extractValue(json, "appearancePosition", "pagePosition");
-        if (pagePosStr == null) {
-            pagePosStr = extractValue(json, "position", "pos");
-        }
-        var pagePos = com.certforge.signing.appearance.SignatureAppearance.PagePosition.fromString(pagePosStr);
-
-        String posTypeStr = extractValue(json, "positionType", "typePosition");
-        var posType = ("pagePosition".equalsIgnoreCase(posTypeStr) || pagePos != null)
-                ? com.certforge.signing.appearance.SignatureAppearance.PositionType.PAGE_POSITION
-                : com.certforge.signing.appearance.SignatureAppearance.PositionType.ABSOLUTE;
-
-        String imgBase64 = extractValue(json, "appearanceImageBase64", "imageBase64");
-        byte[] imgData = null;
-        if (imgBase64 != null && !imgBase64.isBlank()) {
-            try {
-                imgData = java.util.Base64.getDecoder().decode(imgBase64.trim());
-            } catch (Exception _) {}
-        }
-
-        String reason = extractValue(json, "appearanceReason", "reason");
-        String location = extractValue(json, "appearanceLocation", "location");
-        String searchText = extractValue(json, "appearanceSearchText", "searchText");
-        String searchPosStr = extractValue(json, "appearanceSearchPosition", "searchPosition");
-        var searchPos = com.certforge.signing.appearance.SignatureAppearance.SearchPosition.fromString(searchPosStr);
-
-        List<String> textLines = extractJsonStringList(json, "appearanceTextLines");
-        if (textLines == null) {
-            textLines = extractJsonStringList(json, "textLines");
-        }
-
-        return SignatureAppearance.builder()
-                .type(type)
-                .positionType(posType)
-                .page(page)
-                .rectangle(x, y, width, height)
-                .pagePosition(pagePos)
-                .textLines(textLines)
-                .fontSize(fontSize)
-                .imageData(imgData)
-                .reason(reason)
-                .location(location)
-                .searchText(searchText)
-                .searchPosition(searchPos)
-                .padding(padding)
-                .build();
+    private static float getFloat(JsonNode root, JsonNode appNode, String key1, String key2, float def) {
+        String val = getText(root, appNode, key1, key2);
+        if (val == null) return def;
+        try { return Float.parseFloat(val); } catch (Exception _) { return def; }
     }
 
-    private static int parseOrDefaultInt(String str, int def) {
-        if (str == null) return def;
-        try {
-            return Integer.parseInt(str.trim());
-        } catch (NumberFormatException _) {
-            return def;
+    private static List<String> getList(JsonNode root, JsonNode appNode, String key1, String key2) {
+        for (String key : new String[]{key1, key2}) {
+            JsonNode node = appNode != null && appNode.has(key) ? appNode.get(key) : (root != null && root.has(key) ? root.get(key) : null);
+            if (node != null && node.isArray()) {
+                List<String> list = new ArrayList<>();
+                for (JsonNode item : node) {
+                    list.add(item.asText());
+                }
+                return list;
+            }
         }
-    }
-
-    private static float parseOrDefaultFloat(String str, float def) {
-        if (str == null) return def;
-        try {
-            return Float.parseFloat(str.trim());
-        } catch (NumberFormatException _) {
-            return def;
-        }
+        return null;
     }
 }

@@ -95,7 +95,7 @@ CertForge Gateway is a lightweight native service that runs on Windows, macOS, a
 ./gradlew build
 ```
 
-Produces executable Fat JAR: `build/libs/certforge-gateway-0.1.0-all.jar`
+Produces executable Fat JAR: `build/libs/certforge-gateway.jar`
 
 ### 2. Create Configuration
 
@@ -110,6 +110,14 @@ gateway:
 sessions:
   inactivityTimeout: 3600    # seconds
   maxLifetime: 86400         # seconds
+
+pool:
+  maxTotal: 10                  # Maximum total sessions across all tokens
+  maxIdle: 5                    # Maximum idle sessions per token
+  idleTimeoutSeconds: 600       # Close idle sessions after this many seconds
+  maxLifetimeSeconds: 3600      # Force-close sessions after this many seconds
+  validationIntervalSeconds: 30 # Background validation interval
+  borrowTimeoutMs: 2000         # Wait timeout when pool is exhausted
 
 templatesDir: "~/.certforge/templates"
 
@@ -137,7 +145,7 @@ logging:
 ### 3. Run
 
 ```bash
-java --enable-native-access=ALL-UNNAMED -jar build/libs/certforge-gateway-0.1.0-all.jar
+java --enable-native-access=ALL-UNNAMED -jar build/libs/certforge-gateway.jar
 ```
 
 ---
@@ -206,6 +214,9 @@ Pre-configure appearance templates in `gateway.yml` under the `templates:` secti
 - `{date}` — System ISO-8601 signing timestamp
 - `{reason}` — Signing reason string
 - `{location}` — Signing location string
+
+> [!NOTE]
+> **Template Inheritance & Overrides**: Specifying `"template": "standard"` loads pre-configured visual dimensions, font sizes, padding, and text layouts. Any request-level appearance parameters (such as `appearanceSearchText` or `appearanceReason`) merge with and override the template properties.
 
 ### Example Template Sign Job
 ```bash
