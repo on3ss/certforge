@@ -10,7 +10,6 @@ import java.util.List;
 public final class JsonUtils {
 
     private JsonUtils() {
-        // Utility class
     }
 
     public static String extractJsonValue(String json, String key) {

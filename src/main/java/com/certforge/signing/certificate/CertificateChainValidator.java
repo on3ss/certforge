@@ -27,7 +27,6 @@ public class CertificateChainValidator {
 
         X509Certificate leaf = chain[0];
 
-        // Check validity period
         try {
             leaf.checkValidity();
         } catch (Exception e) {
@@ -36,7 +35,6 @@ public class CertificateChainValidator {
             throw new InvalidCertificateException("Certificate is not valid: " + e.getMessage());
         }
 
-        // Check key usage (digitalSignature bit)
         boolean[] keyUsage = leaf.getKeyUsage();
         if (keyUsage != null && keyUsage.length > 0 && !keyUsage[0]) {
             auditLogger.logError("certificate_validation",
@@ -44,7 +42,6 @@ public class CertificateChainValidator {
             throw new InvalidCertificateException("Certificate does not allow digital signatures");
         }
 
-        // Check algorithm
         String algorithm = leaf.getPublicKey().getAlgorithm();
         if (!"RSA".equals(algorithm) && !"EC".equals(algorithm)) {
             auditLogger.logError("certificate_validation",

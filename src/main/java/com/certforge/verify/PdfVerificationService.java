@@ -29,7 +29,6 @@ public class PdfVerificationService implements VerificationService {
     private final AuditLogger auditLogger;
 
     static {
-        // Ensure BouncyCastle provider is registered
         if (Security.getProvider("BC") == null) {
             Security.addProvider(new BouncyCastleProvider());
             LOG.info("BouncyCastle provider registered");

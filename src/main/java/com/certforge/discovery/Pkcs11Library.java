@@ -16,11 +16,10 @@ public interface Pkcs11Library extends Library {
 
     CK_RV C_GetSlotList(byte tokenPresent, NativeLong[] slotList, NativeLongByReference count);
 
-    CK_RV C_GetTokenInfo(long slotID, CK_TOKEN_INFO tokenInfo);   // pass structure directly
+    CK_RV C_GetTokenInfo(long slotID, CK_TOKEN_INFO tokenInfo);
 
     CK_RV C_Finalize();
 
-    // ----- CK_C_INITIALIZE_ARGS -----
     class CK_C_INITIALIZE_ARGS extends Structure {
         public Pointer CreateMutex;
         public Pointer DestroyMutex;
@@ -36,7 +35,6 @@ public interface Pkcs11Library extends Library {
         }
     }
 
-    // ----- CK_RV -----
     class CK_RV extends NativeLong {
         public CK_RV() {
             super(0);
@@ -47,7 +45,6 @@ public interface Pkcs11Library extends Library {
         }
     }
 
-    // ----- CK_VERSION -----
     class CK_VERSION extends Structure {
         public byte major;
         public byte minor;
@@ -58,7 +55,6 @@ public interface Pkcs11Library extends Library {
         }
     }
 
-    // ----- CK_TOKEN_INFO (complete) -----
     class CK_TOKEN_INFO extends Structure {
         public byte[] label = new byte[32];
         public byte[] manufacturerID = new byte[32];

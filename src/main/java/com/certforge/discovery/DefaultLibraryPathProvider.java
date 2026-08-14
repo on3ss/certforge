@@ -32,7 +32,7 @@ public class DefaultLibraryPathProvider implements LibraryPathProvider {
                     "/usr/local/lib/ykcs11.dylib",
                     "/usr/local/lib/opensc-pkcs11.so"
             );
-        } else { // linux
+        } else {
             Collections.addAll(paths,
                     "/usr/lib/softhsm/libsofthsm2.so",
                     "/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so",
@@ -42,7 +42,6 @@ public class DefaultLibraryPathProvider implements LibraryPathProvider {
             );
         }
 
-        // Extend with environment variable
         String extra = System.getenv("CERTFORGE_LIBRARIES");
         if (extra != null && !extra.isBlank()) {
             for (String part : extra.split(",")) {

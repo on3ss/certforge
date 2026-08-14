@@ -34,14 +34,11 @@ public class GatewayApp {
     }
 
     public static void main(String[] args) throws Exception {
-        // 1. Load config first (need audit path before logging starts)
         Config config = loadConfig();
 
-        // 2. Initialize audit logger
         AuditLogger auditLogger = new AuditLogger(config.auditPath());
         auditLogger.logStarted(VERSION);
 
-        // 3. Authentication
         if (config.apiKeys().isEmpty()) {
             LOG.warning("SECURITY WARNING: No API keys configured! Gateway authentication is open.");
         } else {
@@ -49,10 +46,8 @@ public class GatewayApp {
         }
         Authenticator authenticator = new ConfigAuthenticator(config.apiKeys());
 
-        // 4. Port override via environment variable
         int port = resolvePort(config);
 
-        // 5. Session management
         sessionManager = new SessionManager(
                 auditLogger,
                 config.poolConfig(),
@@ -60,17 +55,14 @@ public class GatewayApp {
                 config.sessionMaxLifetime()
         );
 
-        // 6. Assemble gateway
         RestServer server = getRestServer(config, authenticator, auditLogger);
 
-        // 7. Add shutdown hook (also audits shutdown and closes sessions)
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             LOG.info("Shutdown signal received. Stopping CertForge Gateway Application.");
             sessionManager.shutdown();
             auditLogger.logStopped();
         }));
 
-        // 8. Start server
         server.start(port);
 
         LOG.info("Ready. Press Ctrl+C to stop.");
@@ -119,12 +111,10 @@ public class GatewayApp {
     }
 
     private static RestServer getRestServer(Config config, Authenticator authenticator, AuditLogger auditLogger) {
-        // Token discovery
         TokenDiscoverer discoverer = new Pkcs11TokenDiscoverer(
                 new DefaultLibraryPathProvider(), auditLogger
         );
 
-        // Signing service
         SigningKeyProvider signingKeyProvider = new SigningKeyProvider(sessionManager, auditLogger);
         CertificateChainValidator certValidator = new CertificateChainValidator(auditLogger);
         CmsSigningService cmsSigningService = new CmsSigningService(auditLogger);

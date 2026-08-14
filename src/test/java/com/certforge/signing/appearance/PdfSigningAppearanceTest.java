@@ -72,16 +72,13 @@ public class PdfSigningAppearanceTest {
 
     @Test
     void testEndToEndVisualPdfSigning() throws Exception {
-        // 1. Generate test RSA keypair and self-signed certificate
         KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
         keyGen.initialize(2048);
         KeyPair keyPair = keyGen.generateKeyPair();
         X509Certificate cert = generateTestCertificate(keyPair);
 
-        // 2. Create test PDF document
         byte[] inputPdfBytes = createSamplePdf();
 
-        // 3. Create dummy providers & services
         final SigningKey mockSigningKey = new SigningKey(keyPair.getPrivate(), new X509Certificate[]{cert});
         com.certforge.session.SessionManager sessionManager = new com.certforge.session.SessionManager(auditLogger);
         SigningKeyProvider mockKeyProvider = new SigningKeyProvider(sessionManager, auditLogger) {
@@ -99,14 +96,12 @@ public class PdfSigningAppearanceTest {
         CertificateChainValidator mockValidator = new CertificateChainValidator(auditLogger) {
             @Override
             public void validate(X509Certificate[] chain) {
-                // Skip CRL/OCSP check for test self-signed cert
             }
         };
 
         CmsSigningService cmsService = new CmsSigningService(auditLogger);
         PdfSigningService pdfSigningService = new PdfSigningService(mockKeyProvider, mockValidator, cmsService, auditLogger);
 
-        // 4. Sign PDF with visible appearance
         SignatureAppearance appearance = SignatureAppearance.builder()
                 .type(SignatureAppearance.Type.TEXT)
                 .page(0)
@@ -121,7 +116,6 @@ public class PdfSigningAppearanceTest {
         assertNotNull(signedPdf);
         assertTrue(signedPdf.length > inputPdfBytes.length);
 
-        // 5. Verify signed PDF contains AcroForm and Signature Field
         try (PDDocument signedDoc = Loader.loadPDF(signedPdf)) {
             List<PDSignature> signatures = signedDoc.getSignatureDictionaries();
             assertEquals(1, signatures.size(), "Signed PDF must contain exactly 1 digital signature");

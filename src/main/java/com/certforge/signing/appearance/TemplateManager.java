@@ -22,7 +22,6 @@ public class TemplateManager {
         if (initialTemplates != null) {
             this.templates.putAll(initialTemplates);
         }
-        // Register default "standard" template if not present
         if (!templates.containsKey("standard")) {
             templates.put("standard", new TemplateDefinition("standard", createStandardTemplate()));
         }

@@ -59,11 +59,8 @@ public class CmsSigningService {
 
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "Failed to create CMS signature: " + e.getMessage(), e);
-
-            // Audit: CMS construction failed
             auditLogger.logError("cms_signature_creation",
                     "Failed to create CMS signature: " + e.getMessage());
-
             throw new PdfSigningException("Failed to create CMS signature", e);
         }
     }

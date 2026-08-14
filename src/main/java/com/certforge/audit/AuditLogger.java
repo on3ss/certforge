@@ -60,12 +60,10 @@ public class AuditLogger {
         }
     }
 
-    // Generic event
     public void logEvent(AuditEventType type, Map<String, String> fields) {
         log(new AuditEvent(type, fields));
     }
 
-    // Lifecycle
     public void logStarted(String version) {
         logEvent(AuditEventType.GATEWAY_STARTED, Map.of("version", version));
     }
@@ -74,7 +72,6 @@ public class AuditLogger {
         logEvent(AuditEventType.GATEWAY_STOPPED, Map.of());
     }
 
-    // Config
     public void logConfigLoaded(String path) {
         logEvent(AuditEventType.CONFIG_LOADED, Map.of("path", path));
     }
@@ -87,7 +84,6 @@ public class AuditLogger {
         logEvent(AuditEventType.CONFIG_PARSE_ERROR, Map.of("path", path, "error", error));
     }
 
-    // Discovery
     public void logDiscoveryStarted(int libraryCount) {
         logEvent(AuditEventType.TOKEN_DISCOVERY_STARTED, Map.of("libraries", String.valueOf(libraryCount)));
     }
@@ -108,7 +104,6 @@ public class AuditLogger {
         ));
     }
 
-    // Auth
     public void logAuthSuccess(String path, String remoteAddress) {
         logEvent(AuditEventType.AUTH_SUCCESS, Map.of(
                 "path", path,
@@ -123,7 +118,6 @@ public class AuditLogger {
         ));
     }
 
-    // Session
     public void logSessionOpened(String sessionId, String tokenId) {
         logEvent(AuditEventType.SESSION_OPENED, Map.of(
                 "sessionId", sessionId,
@@ -146,7 +140,6 @@ public class AuditLogger {
         logEvent(AuditEventType.SESSION_NOT_FOUND, Map.of("sessionId", sessionId));
     }
 
-    // Pool
     public void logPoolBorrow(String sessionId, String tokenId) {
         logEvent(AuditEventType.POOL_BORROW, Map.of("sessionId", sessionId, "tokenId", tokenId));
     }
@@ -163,7 +156,6 @@ public class AuditLogger {
         logEvent(AuditEventType.POOL_EVICT, Map.of("sessionId", sessionId, "tokenId", tokenId));
     }
 
-    // Signing
     public void logDocumentSigned(String sessionId, String alias, String result,
                                   long pdfSize, long signatureSize) {
         logEvent(AuditEventType.DOCUMENT_SIGNED, Map.of(
@@ -183,7 +175,6 @@ public class AuditLogger {
         ));
     }
 
-    // Verification
     public void logDocumentVerified(String result, int signatureCount) {
         logEvent(AuditEventType.DOCUMENT_VERIFIED, Map.of(
                 "result", result,
@@ -191,7 +182,6 @@ public class AuditLogger {
         ));
     }
 
-    // Errors
     public void logError(String operation, String message) {
         logEvent(AuditEventType.ERROR, Map.of(
                 "operation", operation,
@@ -199,7 +189,6 @@ public class AuditLogger {
         ));
     }
 
-    // API Requests
     public void logRequestReceived(String method, String path) {
         logEvent(AuditEventType.REQUEST_RECEIVED, Map.of(
                 "method", method,

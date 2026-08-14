@@ -71,7 +71,6 @@ public class Pkcs11SessionPool {
         String tokenId = token.id();
         ConcurrentLinkedQueue<PooledSession> queue = idleQueues.get(tokenId);
 
-        // 1. Try to find a valid idle session
         if (queue != null) {
             PooledSession idleSession;
             while ((idleSession = queue.poll()) != null) {
@@ -87,21 +86,19 @@ public class Pkcs11SessionPool {
             }
         }
 
-        // 2. No valid idle session available — acquire creation permit
         boolean acquired = semaphore.tryAcquire(config.borrowTimeoutMs(), TimeUnit.MILLISECONDS);
         if (!acquired) {
             throw new TimeoutException("Pool capacity exhausted (maxTotal=" + config.maxTotal() +
                     "): timed out waiting for session permit (" + config.borrowTimeoutMs() + "ms)");
         }
 
-        // 3. Create new session via factory
         try {
             PooledSession session = factory.create(token, pin);
             session.touch(clock.instant());
             LOG.fine(() -> "Created new session " + session.id() + " for token " + tokenId);
             return session;
         } catch (Exception e) {
-            semaphore.release(); // CRITICAL: release permit if physical creation failed
+            semaphore.release();
             LOG.warning("Factory failed to create session for token " + tokenId + ": " + e.getMessage());
             throw e;
         }
@@ -124,7 +121,7 @@ public class Pkcs11SessionPool {
         ConcurrentLinkedQueue<PooledSession> queue = idleQueues.computeIfAbsent(tokenId, k -> new ConcurrentLinkedQueue<>());
 
         if (queue.contains(session)) {
-            return; // Prevent duplicate returns
+            return;
         }
 
         if (queue.size() >= config.maxIdle()) {
@@ -205,11 +202,9 @@ public class Pkcs11SessionPool {
         if (!session.isValid()) {
             return false;
         }
-        // Idle timeout check
         if (session.lastUsed().plusSeconds(config.idleTimeoutSeconds()).isBefore(now)) {
             return false;
         }
-        // Max lifetime check
         if (session.createdAt().plusSeconds(config.maxLifetimeSeconds()).isBefore(now)) {
             return false;
         }

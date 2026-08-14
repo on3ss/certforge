@@ -55,7 +55,6 @@ public class SessionManager {
             return t;
         });
 
-        // Schedule cleanup every 60 seconds
         this.cleanupExecutor.scheduleAtFixedRate(
                 this::cleanupExpiredSessions,
                 60, 60, TimeUnit.SECONDS
@@ -204,11 +203,9 @@ public class SessionManager {
         if (!session.isValid()) {
             return true;
         }
-        // Check max lifetime
         if (session.createdAt().plusSeconds(maxLifetimeSeconds).isBefore(now)) {
             return true;
         }
-        // Check inactivity
         if (session.lastUsed().plusSeconds(inactivityTimeoutSeconds).isBefore(now)) {
             return true;
         }
@@ -224,7 +221,6 @@ public class SessionManager {
             throw new Exception("Session not found: " + sessionId);
         }
 
-        // Check expiry
         if (isExpired(session, Instant.now())) {
             closeSession(sessionId);
             if (auditLogger != null) {

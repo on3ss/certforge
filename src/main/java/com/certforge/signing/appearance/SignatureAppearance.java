@@ -129,7 +129,6 @@ public class SignatureAppearance {
     public SearchPosition searchPosition() { return searchPosition; }
     public float padding() { return padding; }
 
-    // Bean Getters for compatibility
     public Type getType() { return type(); }
     public PositionType getPositionType() { return positionType(); }
     public int getPage() { return page(); }

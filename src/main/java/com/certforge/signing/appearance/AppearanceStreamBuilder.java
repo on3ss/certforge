@@ -55,7 +55,6 @@ public class AppearanceStreamBuilder {
             byte[] imgBytes = resolveImageBytes(appearance);
 
             try (PDPageContentStream cs = new PDPageContentStream(doc, appearanceStream)) {
-                // Light border around signature box for visual clarity
                 cs.setLineWidth(0.5f);
                 cs.setStrokingColor(0.7f, 0.7f, 0.7f);
                 cs.addRect(0.5f, 0.5f, width - 1f, height - 1f);
@@ -113,7 +112,6 @@ public class AppearanceStreamBuilder {
 
     private static String sanitizeText(String line) {
         if (line == null) return "";
-        // Clean characters unsupported by standard HELVETICA
         StringBuilder sb = new StringBuilder();
         for (char c : line.toCharArray()) {
             if (c >= 32 && c <= 255) {

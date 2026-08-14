@@ -57,14 +57,11 @@ public class PdfSigningService implements SigningService {
         LOG.info("Starting PDF signing with alias: " + alias + (appearance != null ? " (visible appearance type=" + appearance.type() + ")" : ""));
         LOG.fine(() -> "PDF input size: " + pdfBytes.length + " bytes");
 
-        // 1. Get signing key
         SigningKey signingKey = signingKeyProvider.getSigningKey(sessionId, alias);
         X509Certificate[] chain = signingKey.certificateChain();
 
-        // 2. Validate certificate chain
         certificateValidator.validate(chain);
 
-        // 3. Create crypto signer
         CryptoSigner cryptoSigner = new Pkcs11CryptoSigner(
                 signingKey.privateKey(),
                 chain,
@@ -73,9 +70,7 @@ public class PdfSigningService implements SigningService {
                 auditLogger
         );
 
-        // 4. Sign PDF using external signing flow
         try (PDDocument document = Loader.loadPDF(pdfBytes)) {
-            // Create signature dictionary
             PDSignature signature = new PDSignature();
             signature.setFilter(PDSignature.FILTER_ADOBE_PPKLITE);
             signature.setSubFilter(PDSignature.SUBFILTER_ADBE_PKCS7_DETACHED);
@@ -84,11 +79,9 @@ public class PdfSigningService implements SigningService {
             signature.setReason("CertForge Digital Signature");
             signature.setLocation("Local Gateway");
 
-            // Signature options
             SignatureOptions options = new SignatureOptions();
             options.setPreferredSignatureSize(32768);
 
-            // Configure visual signature appearance if specified
             if (appearance != null && appearance.type() != com.certforge.signing.appearance.SignatureAppearance.Type.NONE) {
                 int totalPages = document.getNumberOfPages();
                 int pageIdx = Math.min(Math.max(0, appearance.page()), Math.max(0, totalPages - 1));
@@ -125,36 +118,29 @@ public class PdfSigningService implements SigningService {
                 }
             }
 
-            // Add signature to document
             document.addSignature(signature, options);
 
-            // Prepare for external signing
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             ExternalSigningSupport externalSigning =
                     document.saveIncrementalForExternalSigning(output);
 
-            // Get the exact byte range to sign
             byte[] cmsSignature;
             try (InputStream content = externalSigning.getContent()) {
                 byte[] contentBytes = content.readAllBytes();
                 LOG.fine(() -> "PDF content to sign: " + contentBytes.length + " bytes");
 
-                // Create CMS signature
                 cmsSignature = cmsSigningService.createDetachedSignature(
                         contentBytes, cryptoSigner);
                 LOG.fine(() -> "CMS signature size: " + cmsSignature.length + " bytes");
             }
 
-            // Set the CMS signature
             externalSigning.setSignature(cmsSignature);
 
             byte[] signedPdf = output.toByteArray();
             LOG.info("PDF successfully signed. Final size: " + signedPdf.length + " bytes");
 
-            // Verify signature was embedded
             verifySignedPdf(signedPdf);
 
-            // Audit: document signed successfully
             auditLogger.logDocumentSigned(
                     sessionId, alias, "success", pdfBytes.length, cmsSignature.length
             );
@@ -163,15 +149,10 @@ public class PdfSigningService implements SigningService {
 
         } catch (PdfSigningException e) {
             LOG.log(Level.SEVERE, "PDF signing failed for alias " + alias + ": " + e.getMessage(), e);
-
-            // Audit: signing failed
             auditLogger.logSigningFailed(sessionId, alias, e.getMessage());
-
             throw e;
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "PDF signing failed for alias " + alias + ": " + e.getMessage(), e);
-
-            // Audit: signing failed
             auditLogger.logSigningFailed(sessionId, alias, e.getMessage());
 
             throw new PdfSigningException("Failed to sign PDF", e);
@@ -413,7 +394,6 @@ public class PdfSigningService implements SigningService {
                 }
             }
 
-            // Automatic page boundary clamping to prevent cutoff
             float pageMargin = 15f;
             float clampedX = Math.min(rawX, pageWidth - width - pageMargin);
             clampedX = Math.max(pageMargin, clampedX);

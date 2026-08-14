@@ -49,11 +49,8 @@ public class Pkcs11CryptoSigner implements CryptoSigner {
 
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "PKCS#11 signing failed: " + e.getMessage(), e);
-
-            // Audit: token signing failed
             auditLogger.logError("pkcs11_signing",
                     "Token rejected signing operation (" + signatureAlgorithm + "): " + e.getMessage());
-
             throw new TokenSigningException(
                     "Token rejected the signing operation: " + e.getMessage(), e);
         }
