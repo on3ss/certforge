@@ -2,6 +2,7 @@ package com.certforge.server;
 
 import com.certforge.discovery.TokenInfo;
 import com.certforge.session.CertificateInfo;
+import com.certforge.signing.appearance.SignatureAppearance;
 
 import java.time.Instant;
 import java.util.List;
@@ -214,9 +215,21 @@ public final class JsonUtils {
             textLines = extractJsonStringList(json, "textLines");
         }
 
-        return new com.certforge.signing.appearance.SignatureAppearance(
-                type, posType, page, x, y, width, height, pagePos, textLines, fontSize, imgData, null, reason, location, searchText, searchPos, padding
-        );
+        return SignatureAppearance.builder()
+                .type(type)
+                .positionType(posType)
+                .page(page)
+                .rectangle(x, y, width, height)
+                .pagePosition(pagePos)
+                .textLines(textLines)
+                .fontSize(fontSize)
+                .imageData(imgData)
+                .reason(reason)
+                .location(location)
+                .searchText(searchText)
+                .searchPosition(searchPos)
+                .padding(padding)
+                .build();
     }
 
     private static int parseOrDefaultInt(String str, int def) {

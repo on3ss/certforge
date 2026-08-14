@@ -99,8 +99,22 @@ public class TemplateManager {
 
         float padding = override.padding() > 0 ? override.padding() : (base != null ? base.padding() : 6f);
 
-        return new SignatureAppearance(type, posType, page, x, y, width, height,
-                pagePos, lines, fontSize, imgData, imgPath, reason, loc, searchText, searchPos, padding);
+        return SignatureAppearance.builder()
+                .type(type)
+                .positionType(posType)
+                .page(page)
+                .rectangle(x, y, width, height)
+                .pagePosition(pagePos)
+                .textLines(lines)
+                .fontSize(fontSize)
+                .imageData(imgData)
+                .imagePath(imgPath)
+                .reason(reason)
+                .location(loc)
+                .searchText(searchText)
+                .searchPosition(searchPos)
+                .padding(padding)
+                .build();
     }
 
     public SignatureAppearance substitutePlaceholders(SignatureAppearance appearance, String signer,
@@ -125,13 +139,22 @@ public class TemplateManager {
             substitutedLines.add(updated);
         }
 
-        return new SignatureAppearance(
-                appearance.type(), appearance.positionType(), appearance.page(),
-                appearance.x(), appearance.y(), appearance.width(), appearance.height(),
-                appearance.pagePosition(), substitutedLines, appearance.fontSize(),
-                appearance.imageData(), appearance.imagePath(), resolvedReason, resolvedLocation,
-                appearance.searchText(), appearance.searchPosition(), appearance.padding()
-        );
+        return SignatureAppearance.builder()
+                .type(appearance.type())
+                .positionType(appearance.positionType())
+                .page(appearance.page())
+                .rectangle(appearance.x(), appearance.y(), appearance.width(), appearance.height())
+                .pagePosition(appearance.pagePosition())
+                .textLines(substitutedLines)
+                .fontSize(appearance.fontSize())
+                .imageData(appearance.imageData())
+                .imagePath(appearance.imagePath())
+                .reason(resolvedReason)
+                .location(resolvedLocation)
+                .searchText(appearance.searchText())
+                .searchPosition(appearance.searchPosition())
+                .padding(appearance.padding())
+                .build();
     }
 
     private static SignatureAppearance createStandardTemplate() {

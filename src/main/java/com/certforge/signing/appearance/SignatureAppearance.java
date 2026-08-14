@@ -91,22 +91,6 @@ public class SignatureAppearance {
                                float x, float y, float width, float height,
                                PagePosition pagePosition, List<String> textLines, float fontSize,
                                byte[] imageData, String imagePath, String reason, String location,
-                               String searchText) {
-        this(type, positionType, page, x, y, width, height, pagePosition, textLines, fontSize, imageData, imagePath, reason, location, searchText, SearchPosition.ABOVE, 6f);
-    }
-
-    public SignatureAppearance(Type type, PositionType positionType, int page,
-                               float x, float y, float width, float height,
-                               PagePosition pagePosition, List<String> textLines, float fontSize,
-                               byte[] imageData, String imagePath, String reason, String location,
-                               String searchText, SearchPosition searchPosition) {
-        this(type, positionType, page, x, y, width, height, pagePosition, textLines, fontSize, imageData, imagePath, reason, location, searchText, searchPosition, 6f);
-    }
-
-    public SignatureAppearance(Type type, PositionType positionType, int page,
-                               float x, float y, float width, float height,
-                               PagePosition pagePosition, List<String> textLines, float fontSize,
-                               byte[] imageData, String imagePath, String reason, String location,
                                String searchText, SearchPosition searchPosition, float padding) {
         this.type = type != null ? type : Type.NONE;
         this.positionType = positionType != null ? positionType : PositionType.ABSOLUTE;
