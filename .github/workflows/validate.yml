@@ -48,7 +48,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Verify Java & Gradle
         run: |
