@@ -1,7 +1,6 @@
 plugins {
     id 'java'
     id 'application'
-    id 'org.owasp.dependencycheck' version '12.2.2'
 }
 
 group = 'com.certforge'
@@ -35,18 +34,6 @@ dependencies {
 
 test {
     useJUnitPlatform()
-}
-
-dependencyCheck {
-    failBuildOnCVSS = 7.0
-    failOnError = true
-    format = 'ALL'
-
-    outputDirectory = layout.buildDirectory
-            .dir('reports/dependency-check')
-            .get()
-            .asFile
-            .absolutePath
 }
 
 tasks.register('fatJar', Jar) {

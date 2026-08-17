@@ -30,10 +30,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # --------------------------------------------------
+      # Setup
+      # --------------------------------------------------
+
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Set up JDK
+      - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
           java-version: ${{ env.JAVA_VERSION }}
@@ -51,13 +55,16 @@ jobs:
           java -version
           ./gradlew --version
 
+      # --------------------------------------------------
+      # Tests & Code Quality
+      # --------------------------------------------------
+
       - name: Run Gradle checks
         run: ./gradlew check --no-daemon
 
-      - name: Run Dependency Check
-        run: ./gradlew dependencyCheckAnalyze --no-daemon
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      # --------------------------------------------------
+      # Build
+      # --------------------------------------------------
 
       - name: Build JAR
         run: ./gradlew fatJar --no-daemon
@@ -67,11 +74,39 @@ jobs:
           test -f build/libs/certforge-gateway.jar
           ls -lh build/libs/certforge-gateway.jar
 
+      # --------------------------------------------------
+      # Dependency Security
+      # --------------------------------------------------
+
+      - name: Run OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@v1.1.0
+        env:
+          JAVA_HOME: /opt/jdk
+        with:
+          project: 'CertForge Gateway'
+          path: 'build/libs/certforge-gateway.jar'
+          format: 'HTML'
+          out: 'build/reports/dependency-check'
+          args: >
+            --noupdate
+            --failOnCVSS 7
+            --disableOssIndex
+            ${{ secrets.NVD_API_KEY != '' && format('--nvdApiKey {0}', secrets.NVD_API_KEY) || '' }}
+
+      # --------------------------------------------------
+      # Integrity
+      # --------------------------------------------------
+
       - name: Generate SHA-256 checksum
         run: |
           cd build/libs
           sha256sum certforge-gateway.jar > certforge-gateway.jar.sha256
+
           cat certforge-gateway.jar.sha256
+
+      # --------------------------------------------------
+      # Release artifact
+      # --------------------------------------------------
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v5
@@ -83,6 +118,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # --------------------------------------------------
+      # Reports
+      # --------------------------------------------------
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v5
@@ -92,7 +131,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Upload Dependency Check reports
+      - name: Upload Dependency-Check report
         if: always()
         uses: actions/upload-artifact@v5
         with:
@@ -124,6 +163,7 @@ jobs:
         run: |
           test -f certforge-gateway.jar
           test -f certforge-gateway.jar.sha256
+
           sha256sum --check certforge-gateway.jar.sha256
 
       - name: Generate artifact attestation
